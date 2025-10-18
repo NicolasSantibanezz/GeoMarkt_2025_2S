@@ -2,11 +2,7 @@
 title: "trabajo1_idg_Santibañez"
 author: "Nicolás Santibáñez Reyes"
 date: "`r Sys.Date()`"
-output:  html_document:
-    toc: true
-    toc_float: true
-    number_sections: true
-    theme: readable
+output:  html_document
 ---
 
 # 1. Introducción
@@ -118,12 +114,8 @@ WITH agg AS (
     JOIN public.provincias AS pr ON pr.provincia_ref_id = c.provincia_ref_id
 
     GROUP BY z.geocodigo, c.nom_comuna
+)
 
-```
-
-Segunda parte corresponde a la extracción de las variables de geometría que corresponden a la zona de la Región Metropolitana
-
-```{r}
 
 SELECT 
     a.geocodigo,
@@ -150,6 +142,7 @@ FROM dpa.comunas_rm_shp;
 "
 
 sf_comunas = st_read(con, query = sql_comunas)
+
 ```
 
 ## Formula de indicadores:
@@ -168,7 +161,7 @@ sf_comunas = st_read(con, query = sql_comunas)
 
 Como se solicito en la pauta inicialmente, se generaron individualmente mapas de distribució de las variables sobre la RM. Para ello se utilizo el siguiente codigo para la generar dicho mapa de hacinamiento:
 
-```{Mapa Hacinamiento}
+```{r  Mapa Hacinamiento}
 mapa_hacinamiento <- ggplot() +
   geom_sf(data = df_indicadores, aes(fill = ptje_hacinamiento), color = NA) +
   geom_sf(data = sf_comunas, fill = NA, color = "grey40", linewidth = 0.3) +
@@ -222,15 +215,14 @@ cowplot::plot_grid(
   mapa_hacinamiento,
   ncol = 1,          # vertical
   align = "v",
-  rel_heights = c(1, 1.05) 
+  rel_heights = c(1, 1.05)) 
 ```
 
 # 3.4 Mapa Bivariado
 
 Se genera un mapa Bivariado a partir de los indicadores generados previamente, esto permitira observar la distribución y relación de ambas variables a través del territorio
 
-```{r}
-# Crear la variable bivariada (clasificación 3x3)
+```{}
 bivar_data <- bi_class(
   df_indicadores,
   x = ptje_extranjeros,
@@ -280,7 +272,7 @@ Se presenta el mapa generado sobre el territorio de la Región Metropolitana
 
 ![](mapa_bivariado_extranjeros_hacinamiento.png)
 
-#  4. Análisis espacial
+# 4. Análisis espacial
 
 El mapa bivariado muestra la relación espacial entre el **porcentaje de población inmigrante** y el **porcentaje de viviendas con hacinamiento** en la Región Metropolitana (Censo 2017). La combinación de ambos indicadores permite identificar zonas donde la vulnerabilidad habitacional y la presencia migrante se superponen.
 
