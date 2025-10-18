@@ -21,17 +21,17 @@ El presente trabajo tiene como objetivo **analizar la distribución territorial 
 
 ## 1.1 Objetivo General
 
-Analizar la relación espacial entre el hacinamiento habitacional y la población inmigrante en la Región Metropolitana de Santiago a nivel de zona censal urbana.
+***Analizar la relación espacial entre el hacinamiento habitacional y la población inmigrante en la Región Metropolitana de Santiago a nivel de zona censal urbana.***
 
 ## 1.2 Objetivos específicos
 
--   Calcular el porcentaje de viviendas con hacinamiento moderado o crítico.
+-   **Calcular** el porcentaje de viviendas con hacinamiento moderado o crítico.
 
--    Identificar zonas donde se superponen altas tasas de hacinamiento y presencia de población extranjera.
+-   **Identificar** zonas donde se superponen altas tasas de hacinamiento y presencia de población extranjera.
 
--    Estimar el porcentaje de población inmigrante residente en cada zona censal urbana.
+-   **Estimar** el porcentaje de población inmigrante residente en cada zona censal urbana.
 
--   Representar ambos indicadores mediante mapas temáticos y bivariados.
+-   **Representar** ambos indicadores mediante mapas temáticos y bivariados.
 
 # 2. Metodología
 
@@ -280,7 +280,7 @@ Se presenta el mapa generado sobre el territorio de la Región Metropolitana
 
 ![](mapa_bivariado_extranjeros_hacinamiento.png)
 
-# 4. Análisis espacial
+#  4. Análisis espacial
 
 El mapa bivariado muestra la relación espacial entre el **porcentaje de población inmigrante** y el **porcentaje de viviendas con hacinamiento** en la Región Metropolitana (Censo 2017). La combinación de ambos indicadores permite identificar zonas donde la vulnerabilidad habitacional y la presencia migrante se superponen.
 
@@ -294,12 +294,12 @@ En general, el mapa evidencia un **patrón de correlación positiva**: las área
 
 # 5. Conclusiones
 
-El análisis del mapa bivariado evidencia una relación positiva entre la presencia de población inmigrante y los niveles de hacinamiento en la Región Metropolitana. Las comunas del sur y poniente —como Estación Central, Santiago Centro, Recoleta e Independencia— concentran los mayores niveles de doble vulnerabilidad, donde la precariedad habitacional se superpone con alta densidad migratoria. En contraste, las comunas del nororiente presentan baja presencia migrante y menores niveles de hacinamiento, reflejando desigualdades intraurbanas significativas.
+El análisis del mapa bivariado evidencia una relación positiva entre la presencia de población inmigrante y los niveles de hacinamiento en la Región Metropolitana. Las comunas del sur y poniente del Gran Santiago —como Estación Central, Santiago Centro, Recoleta e Independencia— concentran los mayores niveles de vulnerabilidad, donde la precariedad habitacional se superpone con alta densidad migratoria. En contraste, las comunas del nororiente de esta zona presentan baja presencia migrante y menores niveles de hacinamiento, reflejando desigualdades intraurbanas significativas. Así mismo en la periferia del Gran Santiago se mantiene alto porcentaje de hacinamiento alternando según la zona entre valores de alto y bajo hacinamiento.
 
-Este diagnóstico espacial demuestra que los procesos de segregación residencial y sobreocupación afectan de manera diferenciada a los hogares migrantes, subrayando la necesidad de políticas de vivienda inclusivas y territorialmente focalizadas. El uso de mapas bivariados se revela como una herramienta eficaz para identificar áreas de exclusión y orientar intervenciones urbanas que promuevan integración social y equidad habitacional.
+A su vez en la Región Metropolitana podemos observar que en las zonas cercanas al oriente dentro de la región tienen altos valores de hacinamiento, así no de población extranjera, lo que podría indicar diferencias en la distribución demografica con respecto al centro de la región correspondiente a Santiago.
+
+Este diagnóstico espacial demuestra que los procesos de segregación residencial y sobreocupación afectan de manera diferenciada a los hogares migrantes, subrayando la necesidad de políticas de regulación de la migración y de viviendas. El uso de mapas bivariados se revela como una herramienta eficaz para identificar áreas de exclusión y orientar intervenciones urbanas que promuevan integración social y equidad habitacional.
 
 # 6. Bibliografía
 
 -   Instituto Nacional de Estadísticas (INE). *Censo de Población y Vivienda 2017*.
-
--   Ministerio de Vivienda y Urbanismo (MINVU), 2022. *Informe de Déficit Habitacional en Chile*.
