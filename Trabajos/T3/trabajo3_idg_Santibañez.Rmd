@@ -1,0 +1,775 @@
+---
+title: 'Trabajo 3: Segmentación Territorial del Gran Santiago mediante Técnicas de
+  Clustering'
+author: "Nicolás Santibáñez"
+date: "2025-11-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = FALSE,
+  warning = FALSE,
+  message = FALSE
+)
+# Configurar raíz del proyecto para rutas relativas
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+
+```
+
+# 1. Introducción
+
+## 1.1 Contexto general
+
+El Gran Santiago ha preentado desde hace décadas una marcada y conocida fragmentación socioespacial, la cual se caracteriza por las fuertes desigualdades en variables como ingreso, escolaridad, condiciones habitacionales y acceso a oportunidades. Durante los años diversos estudios han documentado como esta estructura polarizada se expresa principalmente con altos grupos socioeconomicos en la zona Oriente, así mismo se presentan condiciones precarias en las zonas del Oriente y Sur de esta ciudad. ***(Rodríguez & Sugranyes. 2021)***. Esta segregación puede ser observada también en lo que son escalas más pequeñas, donde incluso dentro de una comuna pueden coexistir barrios con diversas caracteristicas socioeconómicas **(heterogenidad espacial).**
+
+A toda esta situación se suma el proceso de inmigración que ha experimentado Chile en la última década, lo cual ha tenido un claro impacto en la composición demográfica de la capital del país. La llegada de una gran cantidad de migrantes los cuales se han concentrado principalmente en comunas del centro y aledañas a este, han generado inevitablemente nuevas dinámicas territoriales asociadas a esta diferencia de variables socioeconómicas mencionadas anteriormente propias de la estructura del Gran Santiago.
+
+Enfocandonos en el ámbito laboral, la informalidad sigue siendo una tema en crecimiento, especialmente en sectores de bajos ingresos. Esta condición tiende a replicarse a nivel territorial, lo cual puede afectar la estabilidad laboral, oportunidad económicas y la capacidad de integrar socialmente. ***(Ministerio del Trabajo, 2022).*** El entender cómo estás variables (**migración, escolaridad, ingreso y formalidad laboral)** se ditribuyen y se combinan a través del territorio es escencial para poder analizar y comprender la estructura socioeconómica de la ciudad.
+
+En el trabajo 2 a través del proceso de Microsimulación se construyó la variable de proporción de empleo formal a nivel de zona censial, esto permitió aproximar la distribución espacial de esta variable en el Gran Santiago. A partir de esto, en el Trabajo 3 se avanza hacia la segmentación territorial utilizando técnicas de clustering, con el fin de identificar diferentes tipologías socioecónomicas de zonas censales que integren multiples dimensiones que aporten a la comprensión del territorio.
+
+## 1.2 Objetivos del Trabajo
+
+**Objetivo General: "Identificar y caracterizar los grupos de zonas censales del Gran Santiago mediante técnicas de clustering, utilizando como variables la proporción de empleo formal, la mediana de ingreso, la escolaridad y la presencia de población migrante"**
+
+A partir de dicho objetivo se plantean los siguientes objetivos específicos para su realización:
+
+-   Descrbir estadísticamente las variables a utilizar en el análisis y evaluar su distribución, variabiluidad y posibles correlaciones.
+
+-   Aplicar el algoritmo de **k-means** para segmentar zonas censales en clústeres socioecnómicamente homogéneos.
+
+-   Analizar la distribución espacial de los clústeres obtenidos y la diversidad interna de cada comuna del Gran Santiago.
+
+-   Comparar los resultados obtenidos en el clustering con la distribución espacial de la formalidad laboral obtenida previamente en el trabajo 2.
+
+## 1.3 Datos utilizados
+
+El análisis realizado se basa en las siguientes fuentes de información:
+
+-   **Censo de Población y Vivienda 2017**, que entrega información sociodemográfica y la geometría oficial de zonas censales.
+
+-   **Resultados de microsimulación del Trabajo 2**, desde donde se obtiene la proporción de trabajadores formales por zona censal.
+
+-   **Capa de ingreso microsimulado**, que incluye la mediana de ingreso estimada para cada zona.
+
+-   **Indicadores calculados a partir de la base de personas del Censo**, que permiten estimar el porcentaje de población migrante y el porcentaje de personas con 16 o más años de escolaridad.
+
+# 2. Metodología
+
+## 2.1 Preparación de datos
+
+Para el análisis de clustering se integraron distintas fuentes en una misma capa final de zonas censales del Gran Santiago. En primera instancia se cargó la base construida en el **Trabajo 2**, que contiene la variable de proporción de empleo formal por zona censal, además se cargaron las bases de mediana de ingreso y la base microsimulada de ***CASEN***. A continuación, a partir de la base de personas del ***Censo 2017*** se calculo el porcentaje de población migrante y el porcentaje de personas con al menos 16 años de escolaridad, ambos a nivel de zona censal vinculandose mediante el `geocódigo`.
+
+El siguiente paso consistió en homogenizar el tipo de dato del indentificador espacial de las bases ( `geocodigo`) en cada tabla para una correcta unión. Con esto se lográ integrar las variables a utilizar (**mediana de ingreso, proporción de migración, proporción de escolaridad**) a la capa final de zonas censales a mostrar. Además no fue necesario filtrar las comunas pertenecientes al Gran Santiago dado que del **Trabajo 2** se mantenia la capa `zona_gs_final.rds` la cual contiene las geometrías del Gran Santiago junto con la información microsimulada anteriormente.
+
+-   Carga de liberias:
+
+```{r librerias, echo=TRUE, message=FALSE, warning=FALSE}
+#---------------------
+# 0. Carga de librerias
+#---------------------
+
+library(DBI)         # Interfaz genérica para conectar y operar con bases de datos
+library(RPostgres)   # Controlador para conectarse a PostgreSQL desde R
+library(sf)          # Lectura, manejo y análisis de datos espaciales (simple features)
+library(dplyr)       # Manipulación eficiente de datos (verbos tidyverse)
+library(ggplot2)     # Visualización mediante gramática de gráficos
+
+library(factoextra)  # Herramientas para clustering: k-means, PCA, visualización de grupos
+library(vegan)       # Análisis multivariado; cálculo del índice de Shannon u otros índices de diversidad
+library(cowplot)     # Composición y organización de múltiples gráficos en un solo layout
+library(viridis)     # Paletas de colores perceptualmente uniformes (ideal para mapas y gráficos)
+library(GGally)      # Extensiones de ggplot2: matrices de correlación, scatterplot matrices, etc.
+library(tidyr)       # Transformaciones de datos: pivotar, desanidar y ordenar tablas para análisis
+
+```
+
+-   Definición de parametros y conexión a BBDD:
+
+```{r connect_bbdd, echo=TRUE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 1. Conexión a la base de datos
+# ----------------------------
+
+db_host     = "localhost"
+db_port     = 5432
+db_name     = "censo_rm_2017"
+db_user     = "postgres"
+db_password = "lucho98"
+
+con = dbConnect(
+  Postgres(),
+  dbname   = db_name,
+  host     = db_host,
+  port     = db_port,
+  user     = db_user,
+  password = db_password
+)
+```
+
+-   Carga de archivos y capas a utilizar:
+
+```{r carga_capas, echo=FALSE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 2. Carga de datos T2 y capas
+# ----------------------------
+
+# Capa final de zonas de la T2 (tiene prop_trabajo_formal)
+zonas_gs_final = readRDS("Data/zonas_gs_final.rds")
+
+# Base microsimulada (por ahora no la usamos directamente)
+sim_df = readRDS("Data/sim_df.rds")
+
+# Capa de ingreso microsimulado de clase (mediana_ingreso por zona)
+zonas_gs_ingreso = st_read("Data/zonas_gs_ingreso.geojson")
+
+# Asegurar que geocodigo sea carácter para poder hacer join
+zonas_gs_ingreso$geocodigo = as.character(zonas_gs_ingreso$geocodigo)
+zonas_gs_final$geocodigo   = as.character(zonas_gs_final$geocodigo)
+
+# Unir mediana de ingreso a la capa final de zonas
+zonas_gs_final = zonas_gs_final %>%
+  left_join(
+    zonas_gs_ingreso %>%
+      st_drop_geometry() %>%
+      select(geocodigo, mediana_ingreso),
+    by = "geocodigo"
+  )
+cat("Estadísticas de Mediana de Ingreso:")
+summary(zonas_gs_final$mediana_ingreso)
+```
+
+-   Cálculo de indicadores:
+
+```{r sql_indicadores, echo=FALSE, message=FALSE, warning=FALSE}
+# ----------------------------------------------
+# 3. Indicadores desde BD: migración y escolaridad
+# ----------------------------------------------
+
+sql_indicadores = "
+SELECT
+  z.geocodigo AS geocodigo,
+  c.nom_comuna,
+
+  -- Porcentaje de migrantes
+  ROUND(
+    COUNT(*) FILTER (WHERE p.p12 NOT IN (1, 2, 98, 99)) * 100.0
+    / NULLIF(COUNT(*), 0),
+  2) AS ptje_migrantes,
+
+  -- Porcentaje de personas con escolaridad >= 16 años
+  ROUND(
+    COUNT(*) FILTER (WHERE p.escolaridad >= 16) * 100.0
+    / NULLIF(COUNT(*) FILTER (WHERE p.escolaridad IS NOT NULL), 0),
+  2) AS ptje_esc_mayor_16
+  
+FROM public.personas   AS p
+JOIN public.hogares    AS h ON p.hogar_ref_id    = h.hogar_ref_id
+JOIN public.viviendas  AS v ON h.vivienda_ref_id = v.vivienda_ref_id
+JOIN public.zonas      AS z ON v.zonaloc_ref_id  = z.zonaloc_ref_id
+JOIN public.comunas    AS c ON z.codigo_comuna   = c.codigo_comuna
+
+GROUP BY z.geocodigo, c.nom_comuna
+ORDER BY ptje_esc_mayor_16 DESC;
+"
+
+df_indicadores_sql = dbGetQuery(con, sql_indicadores)
+
+# Asegurar tipo texto
+df_indicadores_sql$geocodigo = as.character(df_indicadores_sql$geocodigo)
+
+# Unir indicadores a la capa de zonas
+zonas_gs_final = zonas_gs_final %>%
+  left_join(df_indicadores_sql, by = "geocodigo")
+cat("Nombres de columnas en zonas_gs_final para confirmar que se añadieron todas las variables:")
+names(zonas_gs_final)
+cat("Estadísticas de Porcentaje de Migrantes:")
+summary(zonas_gs_final$ptje_migrantes)
+cat("Estadística de Porcentaje de escolaridad mayor a 16 años:")
+summary(zonas_gs_final$ptje_esc_mayor_16)
+
+```
+
+## 2.2 Selección y descripción de variables
+
+El análisis de clustering realizado se basa en cuatro variables que se considera que sintetizan las dimensiones clave del contexto socioeconómico del Gran Santiago, estas son
+
+-   **Proporción de empleo formal por zona censal (`prop_trabajo_formal`**)
+
+-   **La mediana de ingreso por zona censal (`mediana_ingreso`**)
+
+-   **Porcentaje de población migrante por zona censal (`ptje_migrantes`**)
+
+-   **Porcentaje de personas con 16 o más años de escolaridad por zona censal (`ptje_esc_mayor_16`**)
+
+Estas variables se seleccionaron porque permiten integrar los aspectos de estabilidad laboral, nivel económico, nivel educativo y presencia migrante en cada zona censal. Para poder aplicar la metodología propuesta se construyó antes una base depurada que incluye solamente las zonas censales con la información completa de estasas cuatro variables clave, además se describió estadisticamente cada una para poder evaluar sus rangos, valores extremos y otras metricas.
+
+$\text{Tasa de respuesta efectiva} = \frac{\text{Número de zonas censales con información completa}}{\text{Total de zonas censales}}*100$
+
+También se calculó la **tasa de respuesta efectiva**, la cual se puede entender como **el porcentaje de zonas censales con información completa** respecto del total de zonas. Junto con ello se generaron sus respectivas estadisticas descriptivas y una matriz de correlación entre las variables utilizadas, esto permite comprender como se relacionan y así, poder apoyar la interpretación y analisis posterior de los clusters generados. Adicionalmente se construyeron las matrices gráficas de dispersión, las cuales fueron coloreadas según el cluster asignado, lo cual permite visualizar mejor como se distribuyen los datos.
+
+-   Prepararación de datos:
+
+```{r pre_datos, echo=TRUE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 4. Preparar datos para clustering
+# ----------------------------
+
+# Filtrar filas completas en variables de interés
+zonas_cluster = zonas_gs_final %>%
+  filter(
+    !is.na(prop_trabajo_formal),
+    !is.na(mediana_ingreso),
+    !is.na(ptje_migrantes),
+    !is.na(ptje_esc_mayor_16)
+  )
+
+# Matriz de variables numéricas (sin geometría)
+vars_clusters = zonas_cluster %>%
+  st_drop_geometry() %>%
+  select(
+    prop_trabajo_formal,
+    mediana_ingreso,
+    ptje_migrantes,
+    ptje_esc_mayor_16
+  )
+
+# Estandarizar variables
+vars_scaled = scale(vars_clusters)
+summary(vars_scaled)
+```
+
+-   Tasa de respuesta, estadísticas descriptivas y matriz de correlación:
+
+```{r estd_tsr, echo=FALSE, message=FALSE, warning=FALSE}
+# ------------------------------------
+# 4.1 Estadísticas descriptivas básicas
+# ------------------------------------
+
+# Tasa de respuesta (zonas con datos completos)
+n_total   = nrow(zonas_gs_final)
+n_usable  = nrow(zonas_cluster)
+tasa_resp = round(100 * n_usable / n_total, 1)
+
+cat("Tasa de respuesta calculada:")
+tasa_resp
+
+
+# Estadísticas descriptivas de cada variable (a nivel zona)
+summary(vars_clusters)
+
+#Histograma de las variables
+df_univ <- zonas_cluster %>%
+  st_drop_geometry() %>%
+  select(
+    prop_trabajo_formal,
+    mediana_ingreso,
+    ptje_migrantes,
+    ptje_esc_mayor_16
+  ) %>%
+  pivot_longer(
+    cols = everything(),
+    names_to = "variable",
+    values_to = "valor"
+  )
+
+ggplot(df_univ, aes(x = valor)) +
+  geom_histogram(bins = 30, fill = "grey70", color = "white") +
+  facet_wrap(~ variable, scales = "free", ncol = 2) +
+  labs(
+    title = "Distribución de las variables utilizadas en el clustering",
+    x = NULL,
+    y = "Frecuencia"
+  ) +
+  theme_minimal()
+
+cat("Revisión de rangos de cada variable:")
+# Revisión de rangos de cada una ed las variables
+sapply(vars_clusters, range, na.rm = TRUE)
+
+# Matriz de correlaciones numérica
+cor_vars = cor(vars_clusters, use = "complete.obs")
+
+```
+
+## 2.3 Preparación de variables
+
+Para el clustering se utilizaron variables que se encuentran en diferentes escalas:
+
+-   Ingresos: en pesos.
+
+-   Proporción empleo formal: Entre 0 y 1.
+
+-   Porcentaje Migración: Entre 0 y 100.
+
+-   Porcentaje Escolaridad: Entre 0 y 100.
+
+Para evitar que una variable se sobreponga sobre las otras dada su escala númerica, se realizó un proceso de **estandarización** mdiante la transformación **Z-score**, de manera que todas las variables mantengan: **media = 0 y desviación estándar = 1.** Esto a través de la matriz generada previamente **`vars_clusters`** de la cual se generó la matriz **`vars_scaled`**, en la que cada variable cumple con las condiciones mencionadas anteriormente.
+
+Esto garantiza que al utilizar el algoritmo **k-means** se calcule las distancias entre las zonas censales en un espacio donde cada variable contribuye de manera comparable entre ellas. A partir de esta matriz de calculó posteriormente el número óptimo de clusters.
+
+```{r matriz_corr, echo=FALSE, message=FALSE, warning=FALSE}
+cat("Matriz de correlación:")
+cor_vars
+```
+
+## 2.4 Metodología de clustering
+
+Para poder segmentar las zonas censales del Gran Santiago, se utilizó el ya mencionado algoritmo de **k_means**, esta técnica de clustering no supervisado se basa en la partición de datos en **k grupos** para minimizar la suma de cuadrados dentro del cluster. Cada zona censal es asignada al cluster con el centroide que esté más cercano (**distancia euclidiana**).
+
+```{r graf_codo, echo=FALSE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 5. Número óptimo de clusters (método del codo)
+# ----------------------------
+
+set.seed(123)
+
+graf_codo = fviz_nbclust(vars_scaled, kmeans, method = "wss") +
+  labs(
+    title = "Método del codo para K-means",
+    x = "Número de clusters (k)",
+    y = "Suma de cuadrados intra-cluster (WSS)"
+  )
+
+print(graf_codo)
+```
+
+Con el objetivo de conocer el número óptimo de clusters se aplica el **método del codo** usando la matriz generada previamente (`vars_scaled`). Este método evalúa la suma de los cuadrados intra-cluster para los distintos valores de **k** y busca un punto ideal donde la reducción de la suma comienza a estabilizarse. Para este análisis, el gráfico del codo nos sugiere una partición de **k = 3, osea 3 grupos de clusters** logran un equilibrio razonable para el modelo.
+
+Al haber definido **k**, se ejecutó el algoritmo y se aisgnó a cada zona censal un número de cluster. Luego se construyó una tabla a modo de resumen con el número de zonas en cada grupo y los promedios de cada variable por cluster. Para facilitar su interpretación, se creó una etiqueta desciptiva (`cluster_lab`) para cada grupo. la cual vincula su combinaciónpredominante de **formalidad, ingreso, migración y escolaridad**.
+
+```{r tabla_clust, message=FALSE, warning=FALSE, include=FALSE}
+# ----------------------------
+# 6. K-means y resumen de clusters
+# ----------------------------
+
+set.seed(123)
+k_optimo = 3   
+
+km = kmeans(vars_scaled, centers = k_optimo, nstart = 25)
+
+# Agregar el número de cluster a la capa espacial
+zonas_cluster$cluster = as.factor(km$cluster)
+
+# Resumen de variables por cluster
+resumen_clusters = zonas_cluster %>%
+  st_drop_geometry() %>%
+  group_by(cluster) %>%
+  summarise(
+    n_zonas              = n(),
+    prop_formal_prom     = mean(prop_trabajo_formal, na.rm = TRUE),
+    mediana_ingreso_prom = mean(mediana_ingreso,     na.rm = TRUE),
+    ptje_migrantes_prom  = mean(ptje_migrantes,      na.rm = TRUE),
+    ptje_esc16_prom      = mean(ptje_esc_mayor_16,   na.rm = TRUE)
+  )
+
+print(resumen_clusters, n = Inf, width = Inf)
+
+# Etiquetas para los clusters 
+etiquetas_cluster = c(
+  "1" = "Clase media diversa con alta migración",
+  "2" = "Zonas de alto nivel socioeconómico",
+  "3" = "Zonas de menor ingreso y menor escolaridad"
+)
+
+zonas_cluster$cluster_lab = factor(
+  zonas_cluster$cluster,
+  levels = names(etiquetas_cluster),
+  labels = etiquetas_cluster
+)
+ 
+```
+
+## 2.5 Exploración de variables según cluster
+
+Para complementar el análisis númerico, se elaboró una matriz gráfica que incluye graáficos de dispersipón que muestran la relación entre las variables del clustgering, coloreando cada punto según el cluster al que pertenece. Esto permite ver como se separan los grupos en el espacio de cada variable, ideentificar solapamientos y distintos patrones que se pueden asociar a las dimensiones socioeconómicas.
+
+## 2.6 Preparación espacial para análisis territorial
+
+Es necesario una preparación espacial adicional para las representaciones cartográficas. En primer lugar, es necesario obtener las geometrías de las comunas de Santiago, filtrando luego las comunas que efectivamente tienen zonas censales, asegurando así que los mnapas posteriores se limiten a zonas **urbanas**.
+
+Luego se construyó la tabla que contabiliza la cantidad de zonas censales por cluster en cada comuna. A partir de esto se obtuvo el **cluster dominante por comuna**, de forma complementaria se calculo el **Índice de Shannon** para ver la diversidad por comuna.
+
+Posteriormente se unieron las capas previamente mencionadas a la geomemetría comunal para poder generar los mapas. Para poder definir correctamente los límites comunales se generaron contornos urbanos mediante la unión de todas las zonas censales y el contorno de las comunas.
+
+Finalmente todas las capas fueron transformadas al sistema **WSG84 / UTM 19S,** el cual permite trabajas con las coordenadas adecuadas para los mapas. Estos pasos preparan correctamente las cpaas para los mapas del análisis espacial.
+
+```{r prep_spatial, echo=FALSE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 7. Geometría de comunas del Gran Santiago
+# ----------------------------
+
+comunas_gs = zonas_cluster %>%
+  st_drop_geometry() %>%
+  distinct(nom_comuna) %>%
+  pull(nom_comuna)
+
+sql_comunas = "
+SELECT cut, nom_comuna, geom
+FROM dpa.comunas_rm_shp
+WHERE nom_provin = 'SANTIAGO';
+"
+
+sf_comunas_santiago = st_read(con, query = sql_comunas) %>%
+  filter(nom_comuna %in% comunas_gs)
+
+# ----------------------------
+# 8. Variabilidad interna: tabla zonas x comuna x cluster
+# ----------------------------
+
+tabla_clusters_comuna = zonas_cluster %>%
+  st_drop_geometry() %>%
+  group_by(nom_comuna, cluster) %>%
+  summarise(n_zonas = n(), .groups = "drop")
+
+cluster_dom_comuna = tabla_clusters_comuna %>%
+  group_by(nom_comuna) %>%
+  slice_max(n_zonas, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+shannon_comuna = tabla_clusters_comuna %>%
+  group_by(nom_comuna) %>%
+  summarise(
+    shannon = diversity(n_zonas, index = "shannon"),
+    .groups = "drop"
+  )
+
+# ----------------------------
+# 9. Unir info comunal
+# ----------------------------
+
+sf_comunas_cluster = sf_comunas_santiago %>%
+  left_join(cluster_dom_comuna, by = "nom_comuna")
+
+sf_comunas_cluster$cluster = as.factor(sf_comunas_cluster$cluster)
+sf_comunas_cluster$cluster_lab = factor(
+  sf_comunas_cluster$cluster,
+  levels = names(etiquetas_cluster),
+  labels = etiquetas_cluster
+)
+
+sf_comunas_shannon = sf_comunas_santiago %>%
+  left_join(shannon_comuna, by = "nom_comuna")
+
+# ----------------------------
+# 10. Contorno urbano
+# ----------------------------
+
+urb_gs = st_union(st_geometry(zonas_cluster))
+sf_comunas_shannon_urb = st_intersection(sf_comunas_shannon, urb_gs)
+sf_comunas_cluster_urb = st_intersection(sf_comunas_cluster, urb_gs)
+
+# ----------------------------
+# 11. Transformación a UTM WGS84 / 19S
+# ----------------------------
+
+crs_utm <- 32719
+
+zonas_cluster_utm          <- st_transform(zonas_cluster,          crs_utm)
+sf_comunas_santiago_utm    <- st_transform(sf_comunas_santiago,    crs_utm)
+sf_comunas_cluster_urb_utm <- st_transform(sf_comunas_cluster_urb, crs_utm)
+sf_comunas_shannon_urb_utm <- st_transform(sf_comunas_shannon_urb, crs_utm)
+
+bbox_utm <- st_bbox(zonas_cluster_utm)
+```
+
+# 3. Resultados
+
+## 3.1 Comportamiento de las variables
+
+A partir del procesamiento se obtuvo una base de zonas censales del Gran Santiago, la **tasa de respuesta** obtenida es **alta** ( 100%) lo que indica todo el territorio cuenta con información completa de las cuatro variables. Eso nos permite trabajar de forma robusta y con datos representativos del territorio, evitando que el análisis y el clustering se vean afectados por vacíos.
+
+Las **estadísticas descriptivas** generadas muestran que existe una importante heterogeneidad territorial. La proporción del empleo formal presenta valores bastante dispersos, lo que refleja una **desigualdad** en la estabilidad e inserción laboral. De la misma manera, la **mediana de ingreso** exhibe una distribución muy asimétrica en la distintas comunas, lo que es coherente con la concentración de altos ingresos en la zona oriente de la ciudad. En el caso de **porcentajes de migración** se observan valores altos en el centro y en zonas aledañas, mientras que para **porcentaje de escolaridad ≥16 años** se observan altos contrastes entre comunas del oriente y las de zonas conocidas por mayor vulnerabilidad.
+
+Los histogramas de cada variable visualizan las diferencias de forma muy clara, en donde se destaca que cada variable tiene rangos y patrones bastante distintos. Esto anticipa que puedan haber grupos muy diferenciados de otros que serán categorizados por el algoritmo **k-means.**
+
+La **matriz de correlación númerica** nos muestra que la asociación de variables es bastrante relevante, entre ellas se ve que **ingreso y escolaridad** tienen una correlación **positiva**, mientras que en el caso de **formalidad laboral** presenta una relación moderada con **escolaridad**. A contraste de esto, la **proporción de migrantes** nos muestra patrones distintos, lo que sugiere que hay distintas dinámicas que no dependen del nivel socioeconómico.
+
+## 3.2 Tipologías territoriales obtenidas del clustering
+
+El análisis del método del codo indico que el número optimo de grupos corresponde a **k = 3,** ccn este parámetro fue ejecutado el algoritmo de **k-means**, obteniendo tres tipos de clusters.
+
+Además se generó una tabla resumen de cada uno para poder observar claramente sus diferencias. A partir de esta información se definieron las tipologías de las zonas censales:
+
+-   **Cluster 1 – Clase media diversa con alta migración**\
+    Zonas con niveles intermedios de ingreso y escolaridad, pero con una **alta proporción de población migrante**. La formalidad laboral también se mantiene en valores medios. Este grupo combina diversidad socioeconómica con una fuerte presencia migrante, lo que da lugar a territorios híbridos y dinámicos.
+
+<!-- -->
+
+-    **Cluster 2 – Zonas de alto nivel socioeconómico**\
+    Caracterizado por los **mayores niveles de ingreso, formalidad laboral y escolaridad**, junto con una presencia migrante relativamente baja o concentrada en sectores de mayor integración formal. Representa las zonas de mayor bienestar del Gran Santiago.
+
+<!-- -->
+
+-   **Cluster 3 – Zonas de menor ingreso y menor escolaridad**\
+    Incluye zonas con las **menores medianas de ingreso**, bajo nivel educativo y una formalidad laboral reducida. Corresponde a territorios con mayores condiciones de vulnerabilidad socioeconómica.
+
+```{r resumen_clust, echo=FALSE}
+cat("Tabla resumen de clusters:")
+print(resumen_clusters, n = Inf, width = Inf)
+```
+
+## 3.3 Relaciones de variables entre clusters
+
+Para comprender las diferencias entre los diferentes grupos, se construyó una matriz gráfica de relaciones entre las variables del clustering. En esta matriz, cada punto representa una zona censal y se colorea según el cluster al que pertenezca.
+
+```{r gráfica_gg, echo=FALSE, message=FALSE, warning=FALSE}
+# ------------------------------------
+# 6.1 Matriz de correlaciones coloreada por cluster
+# ------------------------------------
+
+# Armamos un data.frame sin geometría, con el cluster
+df_pairs <- zonas_cluster %>%
+  st_drop_geometry() %>%
+  select(
+    cluster_lab,
+    prop_trabajo_formal,
+    mediana_ingreso,
+    ptje_migrantes,
+    ptje_esc_mayor_16
+  )
+
+graf_pairs <- ggpairs(
+  df_pairs,
+  columns  = 2:5,  # las variables numéricas
+  mapping  = aes(color = cluster_lab),  # color por cluster
+  title    = "Relaciones entre formalidad, ingreso, migración y educación\ncoloreadas según cluster",
+  upper    = list(continuous = wrap("cor", size = 3)),
+  lower    = list(continuous = wrap("points", alpha = 0.5, size = 0.5)),
+  diag     = list(continuous = wrap("densityDiag"))
+) +
+  theme_bw() +
+  theme(
+    legend.position = "bottom",
+    plot.title = element_text(hjust = 0.5, face = "bold")
+  )
+
+print(graf_pairs)
+```
+
+De esto podemos observar los siguientes patrones:
+
+-   **Cluster 2** se agrupa en la zona de mayor ingreso y mayor escolaridad, además de altos valores de formalidad laboral
+
+-   **Cluster 3** es el extremo opuesto, tiene zonas de menor ingreso y menor escolaridad, además de presencia de condiciones laborales informales
+
+-   **Cluster 1** tiene valores intermedios, pero con una dispersión mayor, especialmente respecto a la variable de migración, lo cual nos muestra su alta diversidad interna
+
+## 3.4 Mapas
+
+-   Mapa 1: Clusters por zonas censales
+
+```{r maopa_clust_zc, echo=FALSE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 12. Mapa de clusters por zona censal (UTM)
+# ----------------------------
+
+mapa_clusters_zonas <- ggplot() +
+  geom_sf(data = zonas_cluster_utm,
+          aes(fill = cluster_lab),
+          color = NA) +
+  geom_sf(data = sf_comunas_cluster_urb_utm,
+          fill = NA, color = "black", size = 0.4) +
+  geom_sf_text(
+    data = st_point_on_surface(sf_comunas_cluster_urb_utm),
+    aes(label = nom_comuna),
+    size = 1.2,
+    fontface = "bold"
+  ) +
+  scale_fill_brewer(
+    palette = "Set2",
+    name    = "Tipo de zona\n(según cluster)"
+  ) +
+  labs(
+    title    = "Clusters de zonas censales según\nformalidad, ingreso, educación y migración",
+    subtitle = "Gran Santiago (nivel zona censal)",
+    caption  = "Elaboración propia. Datos: Censo 2017 y CASEN.\nTrabajo 3 Geomarketing."
+  ) +
+  coord_sf(
+    xlim = c(bbox_utm["xmin"], bbox_utm["xmax"]),
+    ylim = c(bbox_utm["ymin"], bbox_utm["ymax"]),
+    expand = FALSE,
+    crs    = st_crs(crs_utm)
+  ) +
+  theme_void() +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.position = "right",
+    plot.caption  = element_text(hjust = 0, size = 7, colour = "grey30",
+                                 margin = margin(t = 5))
+  )
+
+print(mapa_clusters_zonas)
+```
+
+-   Mapa 2: Cluster predominante por comuna
+
+```{r mapa_clust_com, echo=FALSE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 13. Mapa de cluster dominante por comuna (UTM + recorte)
+# ----------------------------
+
+mapa_clusters_comuna <- ggplot() +
+  geom_sf(data = sf_comunas_cluster_urb_utm,
+          aes(fill = cluster_lab),
+          color = "black", size = 0.4) +
+  geom_sf_text(
+    data = st_point_on_surface(sf_comunas_cluster_urb_utm),
+    aes(label = nom_comuna),
+    size = 1.2,
+    fontface = "bold"
+  ) +
+  scale_fill_brewer(
+    palette = "Set2",
+    name    = "Cluster dominante\n(tipo de zona)"
+  ) +
+  labs(
+    title    = "Cluster dominante por comuna",
+    subtitle = "Gran Santiago (recortado al área urbana)",
+    caption  = "Elaboración propia. Datos: Censo 2017 y CASEN.\nTrabajo 3 Geomarketing."
+  ) +
+  coord_sf(
+    xlim = c(bbox_utm["xmin"], bbox_utm["xmax"]),
+    ylim = c(bbox_utm["ymin"], bbox_utm["ymax"]),
+    expand = FALSE,
+    crs    = st_crs(crs_utm)
+  ) +
+  theme_void() +
+  theme(
+    plot.title    = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle = element_text(hjust = 0.5),
+    legend.position = "right",
+    plot.caption  = element_text(hjust = 0, size = 7, colour = "grey30",
+                                 margin = margin(t = 5))
+  )
+
+print(mapa_clusters_comuna)
+```
+
+-   Mapa 3: Índice de Shannon por comuna
+
+```{r mapa_shannon, echo=FALSE, message=FALSE, warning=FALSE}
+# ----------------------------
+# 14. Mapa del índice de Shannon por comuna (UTM + recorte)
+# ----------------------------
+
+# Color del texto según valor de Shannon (para legibilidad)
+#sf_comunas_shannon_urb_utm <- sf_comunas_shannon_urb_utm %>%
+# mutate(label_color = ifelse(shannon > 0.4, "black", "white"))
+
+mapa_shannon <- ggplot() +
+  geom_sf(data = sf_comunas_shannon_urb_utm,
+          aes(fill = shannon),
+          color = "grey30", size = 0.3) +
+  geom_sf_text(
+    data = sf_comunas_shannon_urb_utm,
+    aes(label = nom_comuna),
+    colour   = "white",
+    size     = 1.2,
+    fontface = "bold",
+    show.legend = FALSE
+  ) +
+  scale_fill_viridis_c(
+    option   = "viridis",
+    begin    = 0.1,
+    end      = 0.95,
+    na.value = "white",
+    name     = "Índice de Shannon\n(diversidad de clusters)"
+  ) +
+  labs(
+    title    = "Variabilidad interna de clusters por comuna",
+    subtitle = "Índice de Shannon (0 = sin diversidad, valores altos = mayor mezcla de tipos de zona)",
+    caption  = "Elaboración propia. Datos: Censo 2017 y CASEN.\nTrabajo 3 Geomarketing."
+  ) +
+  coord_sf(
+    xlim = c(bbox_utm["xmin"], bbox_utm["xmax"]),
+    ylim = c(bbox_utm["ymin"], bbox_utm["ymax"]),
+    expand = FALSE,
+    crs    = st_crs(crs_utm)
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title      = element_text(hjust = 0.5, face = "bold"),
+    plot.subtitle   = element_text(hjust = 0.5),
+    legend.position = "right",
+    panel.grid.major = element_line(colour = "grey85", size = 0.2),
+    plot.caption    = element_text(hjust = 0, size = 7, colour = "grey30",
+                                   margin = margin(t = 5))
+  )
+
+print(mapa_shannon)
+```
+
+# 4. Análisis espacial:
+
+## 4.1 Distribución de los clusters por zona censal
+
+El **Mapa 1** presenta la distribución de los 3 clusters por zonas censales en el Gran Santiago. Esto permite visualizar como se organizan territorialmente estas tipologías socioecónomicas mediante el algoritmo de **k-means**.
+
+En este mapa tambien se observa que las zonas del **cluster 2** se concentran en el sector oriente de la ciudad, lo que coincide con los patrones historicamente documentados de la ciudad, en dónde los mayores ingresos y el capital educativo se encuentra en comunas como **Las Condes, Vitacura, Lo Barnechea y La Reina.**
+
+A su contraste las zonas del **cluster 3** tienden a agruparse en sectores del **poniente y el sur** de Santiago. Asociados a sus mayores niveles de vulnerabilidad, en estas zonas se encuentran comunas como **Cerro navia, Lo Espejo, La pintana, San Ramón y Puente Alto.**
+
+Finalmente el **cluster 1** se distribuye de forma mas dispersa y heterogenea, con una gran presencia en comunas del centro como lo son **Santiago, Estación Central, Independencia, Recoleta y Quilicura,** esto refleja los cambios en las dinámicas territoriales de estas zonas debido a la población migrante.
+
+En conjunto este mapa nos revela la estructura socioecónomica observada a nivel estadístico, lo cual nos muestra valores claros y coherentes con los patrones conocidos del Gran Santiago.
+
+## 4.2 Cluster dominante por comuna
+
+Para comprender como se agregan estas tipologías de zonas censales en cada comuna es necesario explicar que el **Mapa 2** de cluster dominante corresponde el cluster que mas zonas censales tenga dentro de una comuna. Tras efectuar este calculo, se observa que:
+
+-   Las comunas del oriente se presentan como **cluster 2**
+
+-   Las comunas poniente y sur tienen predominancia del **cluster 3**
+
+-   El centro presenta a el **cluster 1**
+
+Esto nos muestra que las tendencias de cada comuna se mantienen, y que se da bastante homogeniedad a nivel comunal en algunas zonas.
+
+## 4.3  Variabilidad interna de los clusters: Índice de Shannon
+
+Otra manera más compleja que solo analizar la dominancia de un cluster por comuna, es el analizar la heterogeniedad de los clusters de una comuna, esto a través del **Índice de Shannon observado en el Mapa 3.** Para este índice los valores cercanos a 0 representan comunas **homogéneas** y los valores más altos corresponden a zonas con mayor **heterogéneidad. De esto podemos observar:**
+
+-   Comunas del Oriente muestran valores de Shannon bajos, lo que indica una alta **homogeneidad interna**
+
+-   Secto poniente dominado por el **cluster 3** presenta también una baja diversidad, osea una alta **homogeneidad**
+
+-   La zona centro del **cluster 1** es la única que muestra mayor diversidad en sus comunas.
+
+Este indicador nos muestra que comunas pueden tener una mayor complejidad internar y cuales tienen estructuras como homogeneas. Esto nos ayuda mucho para la planificación urbana, ya que las zonas más diversas suelen requerir el asumir distintos enfoques para poder abordar correctamente las problematicas que se den.
+
+## 4.4 Síntesis del análisis espacial
+
+En resumen, el análisis espacial confirma que los clústeres identificados tienen sentido estadístico, y reflejan correctamente los patrones geográficos arraigados en la estructura socioecónomica del Gran Santiago. Esto nos permitió visualizar:
+
+-   Territorios de alta calidad de vida y oportunidades en el oriente
+
+-   Territorios de alta diversidad y de valores intermedios en áreas centricas de la ciudad
+
+-   Territorios vulnerables concentrados en las zonas poniente y sur
+
+La combinación de la información obtenida en el **Mapa 2 y Mapa 3** nos muestra que no todas las comunas tienen la misma complejidad, lo que nos ayuda a interpretar de forma diferenciada a cada comuna según sus necesidades.
+
+# 5. Conclusiones
+
+Las técnicas de clustering propuestas y aplicadas en este trabajo permitieron el segmentar el Gran Santiago en tres grandes tipologías de las zonas censales, las cuales sintetizan de manera clara lo que es la gran diversidad socioeconómica del territorio. En primera instancia la combinación de las 4 variables utilizadas permitió capturar multiples dimensiones para comprender las desiguldades de la ciudad. Este análisis mostró una alta heterogeneidad y contrastes que justifican el uso de estas metodologías multivariadas.
+
+La aplicación del algoritmo **k-means** con **k =3** generó grupos bien diferenciados: uno asociado directamente a **niveles altos de calidad y bienestar (cluster 2)**, otro de **vulnerabilidad (cluster 3)** y uno **intermedio y diverso con alta migración (cluster 1).** Esta interpretación es coherente con la estructura observada en el Trabajo 2, coincidiendo en su gran mayoría con los resultados de empleo formal y con los mapas de dicha entrega que contrastaban las variables de **migración y escolaridad**.
+
+El análisis espacial confirmo lo que se observaba en los patrones estadísticos, puesto que estos tienen una expresión geográfica bastante evidente. Los mapas nos mostraron que los clusteres se distribuyen de forma muy marcada, como ya fue mencionado sobre todo en el oriente y poniente de la c iudad. El índice de Shannon permitió iudentificar comunas **homogéneas** y otras **heterogéneas** con una estructura más compleja.
+
+Finalmente se puede concluir que los resultados entregan una visión consistente y robuste de la segmentación del Gran Santiago a nivel socioeconómico, coincidiendo con el análisis y conclusiones de la Entrega 2. Además se considera que se cumplieron los objetivos propuestos de forma integra llegando al cometido del objetivo general a cabalidad.
+
+# 6. Bibliografía
+
+-   Ministerio del Trabajo y Previsión Social. (2022). **Informe de empleo y formalidad laboral en Chile**.
+
+<!-- -->
+
+-    Rodríguez, A., & Sugranyes, A. (2021). **Los con techo: Un desafío para la política habitacional**. RIL Editores.
+
+<!-- -->
+
+-    Stefoni, C., Leiva, S., & Bonhomme, M. (2020). **Migración y desigualdad urbana en Chile**. *Revista INVI, 35*(99), 75–104.
