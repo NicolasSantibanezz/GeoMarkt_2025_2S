@@ -743,5 +743,4 @@ Organización Internacional del Trabajo (OIT). (2021). *Panorama laboral de Amé
 Programa de las Naciones Unidas para el Desarrollo (PNUD). (2022). *Informe sobre Desarrollo Humano en Chile: Desiguales. Orígenes, cambios y desafíos*. Santiago de Chile: PNUD Chile.\
 <https://www.cl.undp.org>
 
-Ministerio de Desarrollo Social y Familia (MDSF). (2022). *Encuesta de Caracterización Socioeconómica Nacional (CASEN) 2022*. Gobierno de Chile.
-<https://observatorio.ministeriodesarrollosocial.gob.cl/encuesta-casen>
+Ministerio de Desarrollo Social y Familia (MDSF). (2022). *Encuesta de Caracterización Socioeconómica Nacional (CASEN) 2022*. Gobierno de Chile. <https://observatorio.ministeriodesarrollosocial.gob.cl/encuesta-casen>

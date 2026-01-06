@@ -1,0 +1,913 @@
+---
+title: Trabajo Final – Geomarketing (IDG) Estimación de gasto y localización óptima
+  de servicios de comidas fuera del hogar
+author: "Nicolás Santibáñez"
+date: "2026-01-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Configurar raíz del proyecto para rutas relativas
+knitr::opts_knit$set(root.dir = rprojroot::find_rstudio_root_file())
+library(DBI)
+library(RPostgres)
+library(dplyr)
+library(sf)
+library(osmdata)
+library(units)
+
+```
+
+# 1. Introducción
+
+El análisis espacial del consumo y la localización de servicios constituye un componente central para poder comprender el funcionamiento de los sistemas urbanos contemporáneos. En ciudades con una alta densidad poblacional, la distribución territorial de la oferta de comida y la forma en que la población puede acceder a dichas ofertas influyen de manera directa en los patrones de consumo, accesibilidad a bienes y servicios, y finalmente en la competitividad económica de los territorios ***(Berry, 1967; Gosh & McLafferty, 1987).*** Bajo este contexto, el Geomarketing se presenta como una herramienta capaz de integrar tanto información socioeconómica, como espacial y de comportamiento del consumidor, todo esto con el fin de poder apoyar la toma de decisiones con la localización de actividades económicas y la planificación comercial ***(Cliquet, 2006; Hernández & Bennison, 2000).***
+
+Dentro de los servicios urbanos, las comidas fuera del hogar representan una de las actividades de consumo más relevantes en términos económicos y sociales. Este tipo de consumo se asocia estrechamente a transformaciones en los estilos de vida urbanos, la estructura del empleo, los niveles de ingreso y la organización del tiempo cotidiano de los hogares ***(Warde & Mertens, 2000; Dixon et al., 2014)***. Asimismo, la decisión de consumir fuera dfel hogar se encuentra condicionada por factores territoriales, particularmente por la accesibilidad a la oferta existente y su proximidad a los lugares de residencia y trabajo ***(Handy & Niemeier, 1997).***
+
+El área de estudio corresponde al Gran Santiago, un sistema urbano consolidado caracterizado por una alta concentración de población, una marcada heterogeneidad socioeconómica y una amplia oferta de servicios comerciales. En contextos de este tipo, la planificación de nuevas localizaciones comerciales no ncesariamente se traduce en una expansion de la cobertura territorial, sino más bien en mejoras marginales de accesibilidad y eficiencia espacial, especialmente en zonas con alta densidad de oferta preexistente ***(Geurs & van Wee, 2004).***
+
+En este marco, el objetivo principal de este trabajo es analizar la relación espacial entre la demanda potencial y la oferta actual de servicios de comidas fuera del hogar, y proponer una localización óptima para nueva oferta mediante un enfoque de geomarketing y optimización espacial. Para ello, se intengran datos socioeconómicos, información geográfica y un modelo de evaluación de alternativas que permite estimar el impacto territorial de una posible intervención en términos de acesibilidad y atención de la demanda.
+
+## 1.1 Objetivo General
+
+***Analizar la relación espacial entre la demanda potencial y la oferta existente de servicios de comidas fuera del hogar en el área de estudio, integrando información socioeconómica y geográfica, con el fin de identificar brechas territoriales y proponer una localización óptima para nueva oferta mediante un enfoque de geomarketing y optimización espacial.***
+
+## 1.2 Objetivos específicos
+
+-   Estimar la demanda potencial de consumo de comidas fuera del hogar a partir de información socioeconómica, considerando la probabilidad de consumo y el gasto asociado.
+
+<!-- -->
+
+-    Agregar y representar espacialmente la demanda estimada a nivel de zona censal, permitiendo su análisis territorial.
+
+<!-- -->
+
+-    Caracterizar la oferta actual de restaurantes mediante información georreferenciada, identificando su distribución espacial y nivel de concentración.
+
+<!-- -->
+
+-    Analizar la relación entre demanda y oferta a través de indicadores espaciales, clasificando las zonas censales según distintos escenarios de desajuste territorial.
+
+<!-- -->
+
+-    Evaluar alternativas de localización para nueva oferta en zonas con alta demanda y baja oferta, mediante un modelo de optimización basado en accesibilidad.
+
+-    Analizar el impacto territorial de la localización propuesta en términos de mejora de la accesibilidad a los servicios de comidas fuera del hogar.
+
+# 2. Metodología
+
+La metodología del presente trabajo tiene como estructura un enfoque aplicado al geomarketing terriorial, este se oriente a integrar la información socioeconómica y espacial obtenida con el fin de analizar la relación entre la demanda y la oferta de un bien/servicio, que para este caso practico corresponde a servicios relacionados a **Gastos en comidas fuera del hogar**. Este análisis se fue desarrollando a partir de la selección del área de estudio y la selección de datos, esto permitió posteriormente estimar la demanda potencial de dichos servicios, la caracterización de la oferta existente y la evaluación de escenarios para la localización óptima.
+
+A partir de este marco metodológico general, se describe a continuación la elección de área de estudio, fuentes de información utilizadas y los distintos procedimientos empleados en cada etapa del análisis de este trabajo.
+
+## 2.1 Definición del área de estudio
+
+El área de estudio definida corresponde al Gran Santiago, esta zona esta caracterizada por su alta concentración de población, sus actividades económicas y servicios que ofrece. Este territorio tiene una estructura urbana consolidada y con una marcada heterogeidad socioeconómica (como se ha evidenciado en los **T1 y T2** de la presente asignatura de Geomarketing/IDG), lo cual la convierte en una zona de interés para el análisis de la relación entre la demanda y la oferta de servicios relacionados al gasto en comidas fuera del hogar.
+
+Esta elección conlleva ciertos desafios vinculados a la complejidad del sistema urbano, como lo es la amplia oferta de restaurantes pero sin estar distribuidos homogeneamente en el territorio. Esta situación puede generar diferencias entre la accesibilidad. Esta situación nos permite evaluar distintos escenarios de localización optima.
+
+Como unidad de análisis espacial se utilizó la zona censal, dado que la escala que tiene permite capturar de manera adecuada la variabilidad intraurbana del territorio y resulta compatible con la desagregación de la información empleada en el estudio. El utilizar zonas censales facilita el integrar datos de demanda, oferta y geometría; esto nos da la posibilidad de identificar patrones espaciales a nivel territorial.
+
+## 2.2 Datos y fuentes de información
+
+Para la realización de los objetivos designados se utilizo como insumo principal la información generada en tareas previas del curso, particularmente a la Tarea 2 que desarrollo la estimación de demanda de los servicios mencionados. En esta etapa se construyó una base de datos procesada que tenía como objetivo caracterizar el consumo de comidas fuera del hogar a partir de microdatos obtenidos en la encuesta **CASEN** y de la **Encuesta de Presupuestos Familiares (EPF).**
+
+A partir de la información de la **CASEN** se obtuvo una caracterización sociodemográfica de la población, a lo que se incorporó variables asociadas a **edad, nivel educacional, condición laboral e ingresos**. Estas variables se utilizaron para poder estimar la probabilidad de consumo de comidas fuera del hogar a nivel individual, generando así un indicador continuo de **demanda potencial**. A modo de complementar esta información, mediante la **EPF** se incorporó información sobre los patrones de gasto, lo que permitió asociar un valor de gasto estimado al consumo de este tipo de servicios.
+
+Los resultados individuales obtenidos de la estimaciones fueron agregados a nivel territorial, esto se hizo utilizando la zona censal como unidad base de análisis. Como resultado de esto se generaron indicadores de demanda potencial por zona censal, junto con variables de perfil que describen características socioeconómicas predominantes de la población residente de cada zona.
+
+Las geometrías utilizadas para representar las zonas censales provienen de una base de datos espacial almacenada en **PostgreSQL/PostGIS,** la cual ha sido empleada de manera constante en trabajos previos del curso. Esta base de datos contiene la cartografía oficial de zonas censales y permite asegurar coherencia espacial y comparabilidad entre los distintos análisis desarrollados a lo largo de la asignatura. La utilización de esta infraestructura de datos ayuda a integrar entre información socioeconómica, oferta de servicios y geometría territorial.
+
+A partir de esto se construyó una BBDD espacial integrada que combina los indicadores de demanda estimada con la geometría de zonas censales, constituyendo el punto de partida del trabajo final. Esta base es utilizada para el análisis de la relación entre demanda y oferta, así como para la evaluación de escenarios de localización óptima de nueva oferta de servicios de comida fuera del hogar.
+
+De este modo, el trabajo final no replica la estimación de demanda que se hizo previamente, sino que apoya en los resultados que ya se obtuvieron, con el fin de profundizar el análisis territorial, incorporando así la dimensión espacial de la oferta y la accesibilidad a estos servicios.
+
+```{r Carga de datos T2, message=FALSE, warning=FALSE, include=FALSE}
+ruta_casen_prob  <- "casen_rm_comida_fuera_prob_y_clase.rds"
+ruta_casen_gasto <- "casen_rm_comida_fuera_imputado_solo_gastadores.rds"  
+```
+
+```{r Bloque de carga de datos y conexión BD, message=FALSE, warning=FALSE, include=FALSE}
+
+db_host <- "localhost"
+db_port <- 5432
+db_name <- "censo_rm_2017"
+db_user <- "postgres"
+db_password <- "lucho98"
+
+# ----------------------------
+# 1) CONEXIÓN
+# ----------------------------
+con <- dbConnect(
+  Postgres(),
+  dbname   = db_name,
+  host     = db_host,
+  port     = db_port,
+  user     = db_user,
+  password = db_password
+)
+```
+
+```{r helpers y sql, message=FALSE, warning=FALSE, include=FALSE}
+# 2) HELPERS
+pick_first_existing <- function(df, candidates) {
+  hit <- candidates[candidates %in% names(df)]
+  if (length(hit) == 0) return(NA_character_)
+  hit[1]
+}
+
+standardize_comuna_from_estrato <- function(df) {
+  if ("comuna" %in% names(df)) {
+    df$comuna <- as.character(df$comuna)
+    return(df)
+  }
+  alt <- pick_first_existing(df, c("COMUNA","cod_comuna","codigo_comuna","comuna_cod","Comuna"))
+  if (!is.na(alt)) {
+    df <- df %>% mutate(comuna = as.character(.data[[alt]]))
+    return(df)
+  }
+  if (!("estrato" %in% names(df))) {
+    stop("CASEN no tiene 'comuna' ni 'estrato' para construir comuna. Revisa names(casen).")
+  }
+  df <- df %>% mutate(comuna = substr(as.character(estrato), 1, 5))
+  df$comuna <- as.character(df$comuna)
+  return(df)
+}
+
+# ============================================================
+# 3) CREAR TEMP TABLE: POBLACIÓN POR ZONA (cadena correcta según ERD)
+#    personas -> hogares -> viviendas -> zonas
+# ============================================================
+dbExecute(con, "DROP TABLE IF EXISTS tmp_pob_zona;")
+
+dbExecute(con, "
+CREATE TEMP TABLE tmp_pob_zona AS
+SELECT
+  z.geocodigo::text      AS geocodigo,
+  z.codigo_comuna::text  AS comuna_cod,
+  COUNT(*)::bigint       AS pob_zona
+FROM public.personas p
+JOIN public.hogares h
+  ON p.hogar_ref_id = h.hogar_ref_id
+JOIN public.viviendas v
+  ON h.vivienda_ref_id = v.vivienda_ref_id
+JOIN public.zonas z
+  ON v.zonaloc_ref_id = z.zonaloc_ref_id
+GROUP BY z.geocodigo::text, z.codigo_comuna::text;
+")
+
+dbExecute(con, "CREATE INDEX IF NOT EXISTS idx_tmp_pob_zona_geocodigo ON tmp_pob_zona (geocodigo);")
+
+print(dbGetQuery(con, "SELECT COUNT(*) AS n_zonas_tmp FROM tmp_pob_zona;"))
+print(dbGetQuery(con, "SELECT * FROM tmp_pob_zona LIMIT 5;"))
+```
+
+```{r Importación de CASEN y unión a geometrías, message=FALSE, warning=FALSE, include=FALSE}
+# 4) CARGAR CASEN DEMANDA (prob/clase + opcional gasto)
+# ============================================================
+casen <- readRDS(ruta_casen_prob)
+
+req_cols <- c("prob_predicha", "clasificacion")
+missing_req <- setdiff(req_cols, names(casen))
+if (length(missing_req) > 0) stop("Faltan columnas en CASEN: ", paste(missing_req, collapse = ", "))
+
+casen <- standardize_comuna_from_estrato(casen)
+
+col_rango_edad <- if ("rango_edad" %in% names(casen)) "rango_edad" else NA_character_
+col_grupo_esc  <- if ("grupo_escolaridad" %in% names(casen)) "grupo_escolaridad" else NA_character_
+
+demanda_comuna <- casen %>%
+  group_by(comuna) %>%
+  summarise(
+    n_personas     = n(),
+    prob_media     = mean(prob_predicha, na.rm = TRUE),
+    prob_suma      = sum(prob_predicha,  na.rm = TRUE),
+    n_consumidores = sum(clasificacion == 1, na.rm = TRUE),
+    
+    prop_jovenes = if (!is.na(col_rango_edad)) mean(.data[[col_rango_edad]] == "jovenes", na.rm = TRUE) else NA_real_,
+    prop_adultos = if (!is.na(col_rango_edad)) mean(.data[[col_rango_edad]] == "adultos", na.rm = TRUE) else NA_real_,
+    prop_universitarios = if (!is.na(col_grupo_esc)) mean(.data[[col_grupo_esc]] %in% c("Universitaria","Postgrado"), na.rm = TRUE) else NA_real_,
+    
+    .groups = "drop"
+  ) %>%
+  rename(comuna_cod = comuna) %>%
+  mutate(comuna_cod = as.character(comuna_cod))
+
+# --- gasto imputado opcional
+if (file.exists(ruta_casen_gasto)) {
+  casen_gasto <- readRDS(ruta_casen_gasto)
+  casen_gasto <- standardize_comuna_from_estrato(casen_gasto)
+  
+  col_gasto <- pick_first_existing(casen_gasto, c("gasto_estimado_wins","gasto_estimado"))
+  if (is.na(col_gasto)) stop("No encontré columna de gasto en casen_gasto (gasto_estimado_wins o gasto_estimado).")
+  
+  gasto_comuna <- casen_gasto %>%
+    group_by(comuna) %>%
+    summarise(
+      gasto_total = sum(.data[[col_gasto]], na.rm = TRUE),
+      gasto_medio = mean(.data[[col_gasto]], na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    rename(comuna_cod = comuna) %>%
+    mutate(comuna_cod = as.character(comuna_cod))
+  
+  demanda_comuna <- demanda_comuna %>%
+    left_join(gasto_comuna, by = "comuna_cod")
+} else {
+  demanda_comuna <- demanda_comuna %>%
+    mutate(gasto_total = NA_real_, gasto_medio = NA_real_)
+}
+
+# ============================================================
+# 5) TRAER POBLACIÓN POR ZONA + pob por comuna + pesos
+# ============================================================
+pob_zona <- dbGetQuery(con, "SELECT geocodigo, comuna_cod, pob_zona FROM tmp_pob_zona;") %>%
+  mutate(
+    geocodigo = as.character(geocodigo),
+    comuna_cod = as.character(comuna_cod),
+    pob_zona = as.numeric(pob_zona)
+  )
+
+pob_comuna <- pob_zona %>%
+  group_by(comuna_cod) %>%
+  summarise(pob_comuna = sum(pob_zona, na.rm = TRUE), .groups = "drop")
+
+demanda_zona_tabla <- pob_zona %>%
+  left_join(pob_comuna, by = "comuna_cod") %>%
+  left_join(demanda_comuna, by = "comuna_cod") %>%
+  mutate(
+    peso_zona = ifelse(!is.na(pob_comuna) & pob_comuna > 0, pob_zona / pob_comuna, NA_real_),
+    demanda_prob_zona  = prob_suma * peso_zona,
+    demanda_gasto_zona = ifelse(!is.na(gasto_total), gasto_total * peso_zona, NA_real_)
+  )
+
+# ============================================================
+# 6) TRAER GEOMETRÍA dpa.zonas_censales_rm sin st_read(con, query)
+# ============================================================
+srid <- dbGetQuery(con, "SELECT ST_SRID(geom) AS srid FROM dpa.zonas_censales_rm WHERE geom IS NOT NULL LIMIT 1;")$srid[1]
+if (is.na(srid)) srid <- 4326
+
+zonas_geom <- dbGetQuery(con, "
+ SELECT
+  z.geocodigo::text AS geocodigo,
+  z.nom_comuna::text AS nom_comuna,
+  z.urbano,
+  ST_AsBinary(z.geom) AS geom_wkb
+FROM dpa.zonas_censales_rm z
+JOIN dpa.comunas_rm_shp c
+  ON z.nom_comuna = c.nom_comuna
+WHERE z.urbano = 1
+  AND c.nom_provin = 'SANTIAGO';
+
+")
+
+zonas_geom$geom_wkb <- st_as_sfc(structure(zonas_geom$geom_wkb, class = "WKB"), EWKB = TRUE)
+zonas_sf <- st_sf(
+  zonas_geom %>% select(-geom_wkb),
+  geometry = zonas_geom$geom_wkb,
+  crs = srid
+)
+
+# ============================================================
+# 7) UNIR TODO POR geocodigo y EXPORTAR
+# ============================================================
+demanda_zona_sf <- zonas_sf %>%
+  left_join(demanda_zona_tabla, by = "geocodigo")
+
+saveRDS(demanda_zona_tabla, "demanda_zona_censal.rds")
+write.csv(demanda_zona_tabla, "demanda_zona_censal.csv", row.names = FALSE)
+
+saveRDS(demanda_zona_sf, "demanda_zona_censal_sf.rds")
+st_write(demanda_zona_sf, "demanda_zona_censal.gpkg", delete_dsn = TRUE, quiet = TRUE)
+
+message("LISTO ✅ Exportado: demanda_zona_censal.rds/.csv + demanda_zona_censal_sf.rds + demanda_zona_censal.gpkg")
+```
+
+## 2.3 Caracterización de la oferta existente
+
+La oferta de servicios de comidas fuera del hogar fue caracterizada utilizando información georeferenciada de establecimientos de restaurantes obtenida desde **OpenStreetMap (OSM).** Esta fuente permitió identificar la localización de establecimientos comerciales y constituye una aproximación adecuada para el análisis territorial de la oferta.
+
+Los establecimientos se filtraron según categorías asociadas a servicios de alimentación e integrados al sistema de información geográfica. Posteriormente, mediante operaciones espaciales, se asignaron a la s zonas censales, permitiendo así estimar el número de restaurantes por unidad territorial. Este calculo se usó como indicador de oferta relativa, facilitando la comparación entre zonas del área de estudio.
+
+Esta caracterización se centra en la presencia y distribución espacial de los establecimientos, sin considerar diferencias asociadas al tamaño o capacidad de los restaurantes. Esta decisión metodológica responde al objetivo del trabajo, orientado a identificar patrones generales de localización y brechas territoriales entre demanda y oferta.
+
+```{r Importación de puntos por OSM, message=FALSE, warning=FALSE, include=FALSE}
+ruta_gpkg_demanda <- "demanda_zona_censal.gpkg"
+
+zonas <- st_read(ruta_gpkg_demanda, quiet = TRUE)
+
+# chequeos mínimos
+stopifnot("geocodigo" %in% names(zonas))
+if (!("pob_zona" %in% names(zonas))) {
+  message("⚠️ No encuentro 'pob_zona' en zonas. Se calculará solo oferta_n (conteo), no por 1000 hab.")
+}
+
+# Asegurar CRS válido
+if (is.na(st_crs(zonas))) stop("Tus zonas no tienen CRS. Revisa el gpkg del Paso 1.")
+
+# ----------------------------
+# 1) DEFINIR ÁREA DE BÚSQUEDA OSM (bbox de tus zonas)
+#    (esto asegura que OSM se descargue solo dentro de tu recorte GS)
+# ----------------------------
+bbox <- st_bbox(zonas)
+bbox_vec <- c(bbox["xmin"], bbox["ymin"], bbox["xmax"], bbox["ymax"])  # xmin, ymin, xmax, ymax
+
+# Overpass trabaja en WGS84; transformamos bbox a 4326 para la query
+zonas_wgs <- st_transform(zonas, 4326)
+bbox_wgs <- st_bbox(zonas_wgs)
+bbox_wgs_vec <- c(bbox_wgs["xmin"], bbox_wgs["ymin"], bbox_wgs["xmax"], bbox_wgs["ymax"])
+
+# ----------------------------
+# 2) DESCARGAR OSM: restaurants / fast_food / cafe
+# ----------------------------
+# Nota: si Overpass se pone mañoso por tamaño, subimos timeout y/o partimos la bbox.
+q <- opq(bbox = bbox_wgs_vec, timeout = 180)
+
+# Queremos “servicio comida fuera del hogar”
+amenities <- c("restaurant", "fast_food", "cafe")
+
+osm <- q %>%
+  add_osm_feature(key = "amenity", value = amenities) %>%
+  osmdata_sf()
+
+# ----------------------------
+# 3) UNIFICAR GEOMETRÍAS: puntos + polígonos/lines (centroides)
+# ----------------------------
+pts <- osm$osm_points
+pol <- osm$osm_polygons
+mp  <- osm$osm_multipolygons
+ln  <- osm$osm_lines
+
+# Convertir todo a puntos representativos (para asignar a zona)
+to_points <- function(x) {
+  if (is.null(x) || nrow(x) == 0) return(NULL)
+  x <- st_make_valid(x)
+  # usar punto sobre superficie: mejor que centroid para polígonos raros
+  st_point_on_surface(x)
+}
+
+pts2 <- if (!is.null(pts) && nrow(pts) > 0) st_make_valid(pts) else NULL
+pol2 <- to_points(pol)
+mp2  <- to_points(mp)
+ln2  <- to_points(ln)
+
+osm_all <- bind_rows(
+  if (!is.null(pts2)) pts2 else NULL,
+  if (!is.null(pol2)) pol2 else NULL,
+  if (!is.null(mp2))  mp2  else NULL,
+  if (!is.null(ln2))  ln2  else NULL
+)
+
+if (is.null(osm_all) || nrow(osm_all) == 0) stop("OSM no devolvió locales. Puede ser caída de Overpass o bbox vacía.")
+
+# Quedarnos con columnas útiles (si existen)
+keep_cols <- intersect(names(osm_all), c("osm_id","name","amenity","brand","operator","addr:street","addr:housenumber"))
+osm_all <- osm_all %>% select(all_of(keep_cols), geometry)
+
+# Quitar duplicados por osm_id si viene repetido
+if ("osm_id" %in% names(osm_all)) osm_all <- osm_all %>% distinct(osm_id, .keep_all = TRUE)
+
+# Transformar a CRS de las zonas para el join
+osm_all <- st_transform(osm_all, st_crs(zonas))
+
+# Export opcional: capa de puntos OSM
+st_write(osm_all, "osm_restaurantes_gs.gpkg", delete_dsn = TRUE, quiet = TRUE)
+
+```
+
+```{r Asignación zonas y exportación, message=FALSE, warning=FALSE, include=FALSE}
+# 4) ASIGNAR CADA LOCAL A ZONA CENSAL (spatial join)
+# ----------------------------
+# Para que no explote por geometrías raras, nos aseguramos de validez:
+zonas2 <- st_make_valid(zonas)
+
+# Join: cada punto cae en una zona (geocodigo)
+# left = puntos, join = zonas
+osm_join <- st_join(osm_all, zonas2 %>% select(geocodigo), join = st_within, left = TRUE)
+
+# Filtrar puntos que no cayeron en ninguna zona (fuera del recorte)
+osm_join <- osm_join %>% filter(!is.na(geocodigo))
+
+# ----------------------------
+# 5) OFERTA POR ZONA: conteo + densidad por 1000 hab
+# ----------------------------
+oferta_zona <- osm_join %>%
+  st_drop_geometry() %>%
+  group_by(geocodigo) %>%
+  summarise(
+    oferta_n = n(),
+    oferta_restaurant = sum(amenity == "restaurant", na.rm = TRUE),
+    oferta_fastfood   = sum(amenity == "fast_food",  na.rm = TRUE),
+    oferta_cafe       = sum(amenity == "cafe",       na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Unir con zonas (y pob_zona si existe)
+zonas_oferta <- zonas2 %>%
+  left_join(oferta_zona, by = "geocodigo") %>%
+  mutate(
+    oferta_n = ifelse(is.na(oferta_n), 0L, oferta_n),
+    oferta_restaurant = ifelse(is.na(oferta_restaurant), 0L, oferta_restaurant),
+    oferta_fastfood   = ifelse(is.na(oferta_fastfood), 0L, oferta_fastfood),
+    oferta_cafe       = ifelse(is.na(oferta_cafe), 0L, oferta_cafe)
+  )
+
+if ("pob_zona" %in% names(zonas_oferta)) {
+  zonas_oferta <- zonas_oferta %>%
+    mutate(
+      oferta_x1000hab = ifelse(!is.na(pob_zona) & pob_zona > 0, (oferta_n / pob_zona) * 1000, NA_real_)
+    )
+}
+
+# ----------------------------
+# 6) EXPORTAR RESULTADOS
+# ----------------------------
+# Tabla sin geometría
+tabla_oferta <- zonas_oferta %>%
+  st_drop_geometry() %>%
+  select(geocodigo, oferta_n, oferta_restaurant, oferta_fastfood, oferta_cafe,
+         any_of(c("pob_zona","oferta_x1000hab")))
+
+write.csv(tabla_oferta, "oferta_zona_censal.csv", row.names = FALSE)
+saveRDS(tabla_oferta, "oferta_zona_censal.rds")
+
+# Geo: zonas + oferta (para mapear)
+st_write(zonas_oferta, "oferta_zona_censal.gpkg", delete_dsn = TRUE, quiet = TRUE)
+
+```
+
+## 2.4 Análisis espacial de la relación demanda-oferta
+
+Una vez estimada la demanda potencial y siendo caracterizada la oferta, se realizó un análisis espacial con el objetivo de identificar desajustes entre ambos componentes a nivel territorial. Para ello los indicadores de demanda y oferta se integraron a nivel de zona censal, permitiendo así su comparación directa entre una misma unidad espacial.
+
+El análisis se basó en la clasificación de las zonas según niveles relativos de demanda y oferta, distiguiendo escenarios de alta y baja demanda junto a alta y baja oferta. Esta clasificación permitió identificar patrones espaciales relevantes y, en particular, zonas caracterizadas por una alta demanda potencial y una baja disponibilidad de oferta, las cuales representan brechas territoriales desde una perspectiva de geomarketing.
+
+Los resultados de este análisis constituyen un insumo clave para la etapa posterior de optimización, ya que permiten definir un conjunto de zonas prioritarias candidatas para la localización de nueva oferta. De esta manera, el análisis cumple un rol intermedio, conectando la caracterización descriptiva del territorio con la evaluación de escenarios de intervención espacial.
+
+```{r Archivos, indicadores y base unificada, message=FALSE, warning=FALSE, include=FALSE}
+# ============================================================
+# TF IDG — PASO 3: DEMANDA vs OFERTA
+# Indicadores de brecha y saturación por zona censal
+# ============================================================
+
+library(sf)
+library(dplyr)
+
+# ----------------------------
+# 1) CARGAR INSUMOS
+# ----------------------------
+demanda_sf <- st_read("demanda_zona_censal.gpkg", quiet = TRUE)
+oferta_sf  <- st_read("oferta_zona_censal.gpkg", quiet = TRUE)
+
+# Nos quedamos con columnas necesarias
+demanda_df <- demanda_sf %>%
+  st_drop_geometry() %>%
+  select(geocodigo, demanda_prob_zona)
+
+oferta_df <- oferta_sf %>%
+  st_drop_geometry() %>%
+  select(geocodigo, oferta_n)
+
+# ----------------------------
+# 2) UNIR DEMANDA + OFERTA
+# ----------------------------
+df_do <- demanda_df %>%
+  left_join(oferta_df, by = "geocodigo") %>%
+  mutate(
+    oferta_n = ifelse(is.na(oferta_n), 0L, oferta_n)
+  )
+
+# ----------------------------
+# 3) INDICADOR 1: DEMANDA POR LOCAL
+# ----------------------------
+df_do <- df_do %>%
+  mutate(
+    demanda_x_local = ifelse(oferta_n > 0,
+                             demanda_prob_zona / oferta_n,
+                             NA_real_)
+  )
+
+# ----------------------------
+# 4) INDICADOR 2: CLASIFICACIÓN DEMANDA–OFERTA
+#    (usamos mediana para Alta / Baja)
+# ----------------------------
+med_demanda <- median(df_do$demanda_prob_zona, na.rm = TRUE)
+med_oferta  <- median(df_do$oferta_n, na.rm = TRUE)
+
+df_do <- df_do %>%
+  mutate(
+    demanda_cat = ifelse(demanda_prob_zona >= med_demanda, "Alta", "Baja"),
+    oferta_cat  = ifelse(oferta_n >= med_oferta, "Alta", "Baja"),
+    
+    categoria_do = case_when(
+      demanda_cat == "Alta" & oferta_cat == "Baja" ~ "Alta demanda / Baja oferta",
+      demanda_cat == "Alta" & oferta_cat == "Alta" ~ "Alta demanda / Alta oferta",
+      demanda_cat == "Baja" & oferta_cat == "Alta" ~ "Baja demanda / Alta oferta",
+      demanda_cat == "Baja" & oferta_cat == "Baja" ~ "Baja demanda / Baja oferta"
+    )
+  )
+
+# ----------------------------
+# 5) PEGAR INDICADORES A GEOMETRÍA
+# ----------------------------
+zonas_do <- demanda_sf %>%
+  left_join(df_do, by = "geocodigo")
+
+# ----------------------------
+# 6) EXPORTAR RESULTADOS
+# ----------------------------
+# Tabla
+write.csv(
+  zonas_do %>% st_drop_geometry(),
+  "demanda_oferta_zona_censal.csv",
+  row.names = FALSE
+)
+
+saveRDS(zonas_do %>% st_drop_geometry(), "demanda_oferta_zona_censal.rds")
+
+# Geo
+st_write(
+  zonas_do,
+  "demanda_oferta_zona_censal.gpkg",
+  delete_dsn = TRUE,
+  quiet = TRUE
+)
+```
+
+## 2.5 Modelo de optimización de localización
+
+A partir de las zonas ya identificadas como prioritarias en el análisis demanda-oferta, se implementó un modelo de optimización orientado a evaluar alternativas de localización para nueva oferta de servicios de comida fuera del hogar. El modelo se basa en la evaluación comparativa de distintas zonas candidatas y en la selección de aquella que genera el mayor impacto territorial desde una perspectivia de accesibilidad.
+
+El criterio principal de optimización corresponde a la minización de la distancia al establecimiento de comidas fuera del hogar más cercano, entendida como una mejora de condiciones de acceso para la demanda potencial. Para ello se adoptó un enfoque de accesibilidad peatonal, asumiendo una velocidad de caminata constante y un umbral temporal de cinco minutos, transformanbdo una distancia equivalente utilizada para el análisis espacial.
+
+Cada zona candidata fue evaluada considerando su capacidad para mejorar la accesibilidad de las zonas cercanas, estimando tanto la demanda potencial como la reducción dej la distancia promedio al servicio más cercano. La localización óptima se definió como aquella que maximiza la mejora agregada en accesibilidad, entendida como una reducción acumulada de la distancia de acceso a los servicios.
+
+Este enfoque resulta pertinente en contextos urbanos, dónde la oferta existente es relativamente densa y las intervenciones tienden a generar mejoras en accesibilidad más que expansiones significativas de cobertura territorial. De este modo el modelo permite evaluar de manera realista el impacto de una posible localización de nueva oferta, integrando criterios de demanda, oferta y accesibilidad.
+
+```{r Generacion del modelo, message=FALSE, warning=FALSE, include=FALSE}
+# ============================================================
+# 0) RUTAS
+# ============================================================
+ruta_do_gpkg <- "demanda_oferta_zona_censal.gpkg"
+ruta_osm_pts <- "osm_restaurantes_gs.gpkg"
+
+# ============================================================
+# 1) PARÁMETROS
+# ============================================================
+T_min <- 5                # <-- 5 minutos caminando
+v_kmh <- 4.5              # velocidad caminando (km/h)
+R_m   <- (T_min/60) * v_kmh * 1000   # radio en metros (~375 m)
+top_k <- 10
+
+crs_m <- 32719            # UTM 19S (RM)
+
+cat("Umbral:", T_min, "min  |  Radio:", round(R_m), "m\n")
+
+# ============================================================
+# 2) CARGAR ZONAS + CONSOLIDAR DEMANDA
+# ============================================================
+zonas <- st_read(ruta_do_gpkg, quiet = TRUE)
+
+zonas_df <- zonas %>%
+  st_drop_geometry() %>%
+  mutate(
+    demanda_prob_zona = dplyr::coalesce(`demanda_prob_zona.y`, `demanda_prob_zona.x`)
+  ) %>%
+  transmute(
+    geocodigo = as.character(geocodigo),
+    demanda_prob_zona = as.numeric(demanda_prob_zona),
+    oferta_n = as.integer(oferta_n),
+    categoria_do = as.character(categoria_do)
+  )
+
+stopifnot(all(c("geocodigo","demanda_prob_zona","oferta_n","categoria_do") %in% names(zonas_df)))
+# ============================================================
+# 3) PROYECTAR + CENTROS DE ZONA
+# ============================================================
+zonas_m <- st_transform(zonas, crs_m)
+
+centros <- st_point_on_surface(zonas_m) %>%
+  select(geocodigo) %>%
+  mutate(geocodigo = as.character(geocodigo))
+```
+
+```{r optimización, message=FALSE, warning=FALSE, include=FALSE}
+# ============================================================
+# 4) CANDIDATOS (Escenario 2): Alta demanda / Baja oferta + oferta_n == 0
+# ============================================================
+candidatos <- zonas_df %>%
+  filter(categoria_do == "Alta demanda / Baja oferta", oferta_n == 0) %>%
+  distinct(geocodigo)
+
+cat("N° candidatos:", nrow(candidatos), "\n")
+
+# Si te quedaran 0 candidatos por oferta_n==0, vuelve al criterio sin esa restricción:
+if (nrow(candidatos) == 0) {
+  message("⚠️ No hay candidatos con oferta_n==0. Uso solo 'Alta demanda / Baja oferta'.")
+  candidatos <- zonas_df %>%
+    filter(categoria_do == "Alta demanda / Baja oferta") %>%
+    distinct(geocodigo)
+  cat("N° candidatos (sin restricción oferta_n==0):", nrow(candidatos), "\n")
+}
+
+cand_pts <- centros %>% inner_join(candidatos, by="geocodigo")
+
+# ============================================================
+# 5) OPTIMIZACIÓN: MAXIMIZAR DEMANDA CUBIERTA POR BUFFER
+# ============================================================
+cand_buf <- st_buffer(cand_pts, dist = R_m)
+
+cov <- st_join(
+  centros %>% left_join(zonas_df %>% select(geocodigo, demanda_prob_zona), by="geocodigo"),
+  cand_buf %>% rename(cand_geocodigo = geocodigo),
+  join = st_within,
+  left = FALSE
+) %>% st_drop_geometry()
+
+score_cand <- cov %>%
+  group_by(cand_geocodigo) %>%
+  summarise(
+    demanda_cubierta = sum(demanda_prob_zona, na.rm = TRUE),
+    n_zonas_cubiertas = n(),
+    .groups="drop"
+  ) %>%
+  arrange(desc(demanda_cubierta))
+
+cat("\nTOP candidatos:\n")
+print(head(score_cand, top_k))
+
+optimo <- score_cand %>% slice(1)
+cat("\n✅ Zona óptima propuesta:", optimo$cand_geocodigo, "\n")
+```
+
+```{r escenarios y optimización, message=FALSE, warning=FALSE, include=FALSE}
+# ============================================================
+# 4) CANDIDATOS (Escenario 2): Alta demanda / Baja oferta + oferta_n == 0
+# ============================================================
+candidatos <- zonas_df %>%
+  filter(categoria_do == "Alta demanda / Baja oferta", oferta_n == 0) %>%
+  distinct(geocodigo)
+
+cat("N° candidatos:", nrow(candidatos), "\n")
+
+# Si te quedaran 0 candidatos por oferta_n==0, vuelve al criterio sin esa restricción:
+if (nrow(candidatos) == 0) {
+  message("⚠️ No hay candidatos con oferta_n==0. Uso solo 'Alta demanda / Baja oferta'.")
+  candidatos <- zonas_df %>%
+    filter(categoria_do == "Alta demanda / Baja oferta") %>%
+    distinct(geocodigo)
+  cat("N° candidatos (sin restricción oferta_n==0):", nrow(candidatos), "\n")
+}
+
+cand_pts <- centros %>% inner_join(candidatos, by="geocodigo")
+
+# ============================================================
+# 5) OPTIMIZACIÓN: MAXIMIZAR DEMANDA CUBIERTA POR BUFFER
+# ============================================================
+cand_buf <- st_buffer(cand_pts, dist = R_m)
+
+cov <- st_join(
+  centros %>% left_join(zonas_df %>% select(geocodigo, demanda_prob_zona), by="geocodigo"),
+  cand_buf %>% rename(cand_geocodigo = geocodigo),
+  join = st_within,
+  left = FALSE
+) %>% st_drop_geometry()
+
+score_cand <- cov %>%
+  group_by(cand_geocodigo) %>%
+  summarise(
+    demanda_cubierta = sum(demanda_prob_zona, na.rm = TRUE),
+    n_zonas_cubiertas = n(),
+    .groups="drop"
+  ) %>%
+  arrange(desc(demanda_cubierta))
+
+cat("\nTOP candidatos:\n")
+print(head(score_cand, top_k))
+
+optimo <- score_cand %>% slice(1)
+cat("\n✅ Zona óptima propuesta:", optimo$cand_geocodigo, "\n")
+
+```
+
+```{r calculo diferencias, message=FALSE, warning=FALSE, include=FALSE}
+# ============================================================
+# 6) ANTES vs DESPUÉS (accesibilidad por distancia)
+# ============================================================
+osm_pts <- st_read(ruta_osm_pts, quiet = TRUE)
+osm_m   <- st_transform(osm_pts, crs_m)
+
+# 6.1 Distancia a restaurante más cercano (oferta actual)
+nearest_idx  <- st_nearest_feature(centros, osm_m)
+dist_nearest <- st_distance(centros, osm_m[nearest_idx, ], by_element = TRUE)
+dist_nearest <- as.numeric(dist_nearest)
+
+base <- centros %>%
+  st_drop_geometry() %>%
+  left_join(zonas_df %>% select(geocodigo, demanda_prob_zona), by="geocodigo") %>%
+  mutate(
+    dist_rest_nearest_m = dist_nearest,
+    cubierta_actual = ifelse(dist_rest_nearest_m <= R_m, 1L, 0L)
+  )
+
+# 6.2 Distancia al nuevo local (óptimo)
+opt_pt <- cand_pts %>% filter(geocodigo == optimo$cand_geocodigo)
+dist_to_new <- as.numeric(st_distance(centros, opt_pt))
+
+base <- base %>%
+  mutate(
+    dist_nuevo_m = dist_to_new,
+    cubierta_nuevo = ifelse(dist_nuevo_m <= R_m, 1L, 0L),
+    cubierta_despues = pmax(cubierta_actual, cubierta_nuevo),
+    
+    # Mejora binaria (pasa de 0 a 1 por el nuevo local)
+    mejora_cobertura = ifelse(cubierta_actual == 0 & cubierta_nuevo == 1, 1L, 0L),
+    
+    # Mejora continua (reducción distancia)
+    dist_mejor_m  = pmin(dist_rest_nearest_m, dist_nuevo_m),
+    mejora_dist_m = dist_rest_nearest_m - dist_mejor_m
+  ) %>%
+  mutate(
+    # BLINDAJE: sin NA y sin negativos
+    mejora_dist_m = ifelse(is.na(mejora_dist_m), 0, mejora_dist_m),
+    mejora_dist_m = pmax(mejora_dist_m, 0)
+  )
+```
+
+```{r exports finales, message=FALSE, warning=FALSE, include=FALSE}
+
+# ============================================================
+resumen <- base %>%
+  summarise(
+    demanda_total = sum(demanda_prob_zona, na.rm = TRUE),
+    demanda_cubierta_actual = sum(demanda_prob_zona * cubierta_actual, na.rm = TRUE),
+    demanda_cubierta_despues = sum(demanda_prob_zona * cubierta_despues, na.rm = TRUE),
+    mejora_demanda_cubierta = demanda_cubierta_despues - demanda_cubierta_actual,
+    zonas_nuevas_cubiertas = sum(mejora_cobertura, na.rm = TRUE),
+    mejora_dist_total_m = sum(mejora_dist_m, na.rm = TRUE),
+    mejora_dist_media_m = mean(mejora_dist_m, na.rm = TRUE)
+  )
+# ============================================================
+# 8) EXPORTS
+# ============================================================
+write.csv(score_cand, "optimizacion_scores_candidatos_buffer.csv", row.names = FALSE)
+write.csv(base, "mejora_por_zona_buffer.csv", row.names = FALSE)
+
+zonas_out <- zonas_m %>%
+  mutate(geocodigo = as.character(geocodigo)) %>%
+  left_join(
+    base %>% select(geocodigo, cubierta_actual, cubierta_nuevo, cubierta_despues,
+                    mejora_cobertura, mejora_dist_m,
+                    dist_rest_nearest_m, dist_nuevo_m),
+    by="geocodigo"
+  ) %>%
+  mutate(es_optimo = ifelse(geocodigo == optimo$cand_geocodigo, 1L, 0L))
+
+st_write(zonas_out, "zonas_optimizacion_buffer.gpkg", delete_dsn = TRUE, quiet = TRUE)
+
+opt_buf <- st_buffer(opt_pt, dist = R_m)
+st_write(opt_buf, "area_servicio_optimo_buffer.gpkg", delete_dsn = TRUE, quiet = TRUE)
+```
+
+# 3. Resultados
+
+En esta sección se presentan los resultados obtenidos a partir de lo realizado previamente. Estos resultados se organizan de manera secuencial, comenzando por la distribución territorial de la demanda, seguida por la caracterización de la oferta y relación entre ambos componentes, para finalmente exponer los resultados del modelo de optimización y su impacto en términos de accesibilidad.
+
+La presentación de estos resultados se apoya en representaciones cartográficas y en indicadores cuantitativos, permitiendo describir patrones espaciales y las diferencias territoriales identificadas en el área de estudio.
+
+## 3.1 Distribución espacial de la demanda potencial
+
+La demanda potencial de consumo de comidas fuera del hogar presenta una distribución espacial heterogénea a nivel de zona censal. Los resultados muestran la existencia de sectores con niveles elevados de demanda potencial, asociados principalemente a áreas con mayor concentración de población y a zonas con características socioeconómicas favorables para este tipo de consumo.
+
+La representación espacial de la demanda permite identificar patrones territoriales claros, en los cuales se observa una mayor intensidad de demanda en las zonas centrales y pericentrales del área de estudio, así como en zonas con alta accesibilidad y concentración de actividades urbanas. En contraste, las zonas periféricas tienden a presentar menores niveles de demanda potencial, reflejando diferencias en la estructura socioeconómica y en los patrones de consumo.
+
+Estos resultados constituyen un in sumo fundamental para las estapas psoteriores del análisis, ya que permiten contextualizar la distribución de la demanda en el territorio y facilitan la comparación con la localización de la oferta existente. Asimismo, la identificación de áreas con alta demanda potencial resulta clave para la evaluación de brechas territoriales y la definición de zonas candidatas para la localización de nueva oferta.
+
+```{r mapeo demanda potencial, echo=FALSE, message=FALSE, warning=FALSE}
+m <- st_read("demanda_zona_censal.gpkg", quiet = TRUE)
+plot(m["demanda_prob_zona"])
+```
+
+## 3.2 Distribución espacial de la oferta existente
+
+La oferta de servicios de comidas fuera del hogar presenta una distribución espacial desigual a nivel de zona censal. Los establecimientos de restaurantes se concentyran principalmente en sectores centrales y en áreas con mayor actividad, mientras que en zonas de la periferia la presencia de oferta es limitada en comparación al centro.
+
+La representación espacial de la oferta permite identificar zonas con alta concentración de establecimientos y otras con baja o nula disponibilidad de servicios, evidenciando patrones de localización comercial típicos de contextos urbanos consolidados. Estas diferencias territoriales constituyen un insumo clave para el análisis conjunto con la demanda potencial y la identificación de brechas espaciales.
+
+```{r mapeo demanda por localidad, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Mapa 1: Demanda por local
+plot(zonas_do["demanda_x_local"])
+
+```
+
+## 3.3 Relación espacial entre demanda y oferta
+
+El análisis conjunto de la demanda potencial y la oferta existente evidencia una relación espacial heterogénea entre ambos componentes a nivel de zona censal. Al integrar los indicadores de demanda y oferta, se identifican zonas donde altos niveles de demanda coextisten con una disponibilidad limitada de servicios, así como áreas dónde la oferta es relativamente alta en relación con la demanda potencial.
+
+Esta relación permite distinguir distintos escenarios territoriales, destacando zonas con desajustes entre demanda y oferta que representan brechas relevantes desde una perspectiva de geomarketing. En particular, las zonas caracterizadas por alta demanda y baja oferta emergen como áreas prioritarios para evaluación de estrategbias de localización de nueva oferta.
+
+Los resultados de este análisis constituyen la base para la etapa posterior de optimización, al permitir focalizar la evaluación en aquellas zonas dónde una intervención podría generar mayores beneficios en terminos de accesibilidad.
+
+```{r Clasificación demanda-oferta, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Mapa 2: Clasificación Demanda–Oferta
+plot(zonas_do["categoria_do"])
+
+```
+
+## 3.4 Resultados del modelo de optimización
+
+La aplicación del modelo de optimización permitió identificar una zona censal como localización óptima para la instalación de nnueva oferta de servicios de comidas fuera del hogar. Esta zona se seleccionó a partir de la evaluación comparativa ed las alternativas candidatas, considerando su capacidad para mejorar la accesbilidad de la demanda potencial en el entorno inmediato.
+
+Los resultados muestran que la localización óptima se asocia a un sector caracterizado por niveles relativamente altos de demanda potencial y una baja disponibilidad de oferta existente. En términos territoriales, la zona seleccionada presenta una posición que le permite influir sobre un conjunto de zonas circundantes, generando mejoras en las condiciones de acceso a los servicios de comida fuera del hogar.
+
+La evaluación del modelo indica que la principal contribución de la localización propuesta se expresa a través de la reducción de la distancia al establecimiento más cercano apra determinadas zonas del área de estudio. Si bien no se observa una expansión significativa de la cobertura territorial bajo el umbral de accesibilidad considerado, la localización óptima genera mejoras localizadas en accesibilidad, especialmente en sectores donde la oferta existente se encentra más dispersa.
+
+Estos resultados confirman la pertinencia del enfoque de optimización adoptado, particularmente es un contexto urbano consolidado, dónde los beneficios de nuevas localizaciones tienden a manifestarse mediante mejoras marginales en el acceso a los servicios más que a través de la incorporación de nuevas áreas cubiertas.
+
+```{r mapeo resultados modelo, echo=FALSE, message=FALSE, warning=FALSE}
+plot(zonas_out["mejora_cobertura"], main=paste0("Nuevas zonas cubiertas (",T_min," min ~ ", round(R_m)," m)"))
+plot(st_geometry(opt_buf), add = TRUE)
+plot(st_geometry(opt_pt), add = TRUE, pch = 16)
+
+plot(zonas_out["mejora_dist_m"], main=paste0("Mejora accesibilidad: reducción distancia (",T_min," min ~ ", round(R_m)," m)"))
+plot(st_geometry(opt_buf), add = TRUE)
+plot(st_geometry(opt_pt), add = TRUE, pch = 16)
+```
+
+## 3.5 Impacto territorial de la localización propuesta
+
+El impacto territorial de la localización propuesta fue evaluado a partir de un análisis comparativo de las condiciones de accesibilidad antes y después de la incorporación de la nueva oferta. Para ello se consideró la distnacia al establecimiento de comidas fuera del hogar más cercano como indicador principal de acceso, bajo un enfoque de accesibilidad peatonal.
+
+Los resultados muestran que, bajo el umbral de accesibilidad definido, la incorporación de la nueva localización no genera un aumento en el número de zonas cubiertas en términos binarios. Esto se explica por la alta densidad de oferta existente en el área de estudio, característica de un sistema urbano consolidado como el Gran Santiago. No obstante, la localización propuesta si produce mejoras relevantes en la accfesibilidad efectiva para un conjunto de zonas.
+
+En conjunto los resultados evidencian que en contexto urbanos densos, las estrategias de localización óptima tienden a generar mejoras marginales pero relevantes en accesibilidad, más que expansiones de cobertura territorial, reforzando la importancia de evaluar impactos continuos y no únicamente indicadores binarios de cobertura.
+
+```{r Estadisticas influencia, echo=FALSE, message=FALSE, warning=FALSE}
+resumen <- base %>%
+  summarise(
+    demanda_total = sum(demanda_prob_zona, na.rm = TRUE),
+    demanda_cubierta_actual = sum(demanda_prob_zona * cubierta_actual, na.rm = TRUE),
+    demanda_cubierta_despues = sum(demanda_prob_zona * cubierta_despues, na.rm = TRUE),
+    mejora_demanda_cubierta = demanda_cubierta_despues - demanda_cubierta_actual,
+    zonas_nuevas_cubiertas = sum(mejora_cobertura, na.rm = TRUE),
+    mejora_dist_total_m = sum(mejora_dist_m, na.rm = TRUE),
+    mejora_dist_media_m = mean(mejora_dist_m, na.rm = TRUE)
+  )
+
+cat("\nRESUMEN (antes vs después):\n")
+print(resumen)
+
+cat("\nTabla mejora_cobertura (0=no, 1=si):\n")
+print(table(base$mejora_cobertura, useNA="ifany"))
+
+cat("\nResumen mejora_dist_m:\n")
+print(summary(base$mejora_dist_m))
+cat("\nMin mejora_dist_m (debería ser 0):\n")
+print(min(base$mejora_dist_m, na.rm = TRUE))
+```
+
+# 4. Análisis y discusión
+
+Los resultados obtenidos permiten analizar de manera integrada la relación entre la demanda potencial, la oferta existente y el impacto territorial de una posible localización de nueva oferta de servicios de comidas fuera del hogar. En términos generales, el análisis evidencia que la dinámica espacial del consumo y de la oferta en el área de estudio responde a patrones propios de un sistema urbano consolidado, donde la densidad y distribución de los servicios condicionan fuertemente los resultados de cualquier intervención.
+
+La distribución espacial de la demanda potencial muestra una clara heterogeneidad territorial, asociada a diferencias en la concentración poblacional y en las características socioeconómicas de la población residente. Estos patrones son coherentes con lo esperado para el consumo de comidas fuera del hogar, el cual se vincula estrechamente a factores como ingresos, estructura etaria y estilos de vida urbanos. La concentración de demanda en sectores del centro refuerza la idea de que este tipo de consumo se articula con áreas de mayor actividad urbana y accesibilidad.
+
+Por su parte la oferta existente de restaurantes muestyra una distribución igualmente desigual, con fuerte concentraciones en zonas puntuales. Este patrón refleja logicas de localización comercial típicas, donde los establecimientos tienden a agruparse en áreas con mayor flujo de personas y mayor atractivo económico. La superposición parcial entre zonas de alta demanda y alta oferta sugiere que, en muchos casos, el mercado ya responde a la localización de la demanda, aunque no de manera homogénea en todo el territorio.
+
+El análisis conjunto de demanda y oferta permitió identificar zonas con desajustes territoriales, particularmente aquellas caracterizdas por una alta demanda potencial y una alta disponibilidad de oferta. Estas zonas representan brechas relevantes ya que combinan un potencial de consumo elevado con condiciones de acceso desfavorables para el usuario. No obstante, la presencia de estas brechas no implica necesariamente ausencia de oferta, sino menos eficiencia espacial.
+
+Los resultados del modelo de optimización confirman esta lectura. La localización óptima identificada no genera una expansión significativa de la cobertura territorial bajo el umbral de accesibilidad considerado, lo que se explica por la alta densidad de oferta existente en el área de estudio. En un contexto urbano como el Gran Santiago, incluso umbrales estrictos de accesibilidad peatonal revelan que gran parte del territorio ya cuenta con algún nivel de acceso a servicios de comidas fuera del hogar.
+
+Sin embargo, el análisis de impacto territorial muestra que la intervención propuesta sí genera mejoras relevantes en términos de accesibilidad efectiva, expresadas como reducciones en la distancia al establecimiento más cercano. Estas mejoras, aunque localizadas, resultan significativas para ciertos sectores del territorio, particularmente aquellos donde la oferta es más dispersa. Este resultado pone de relieve la importancia de considerar indicadores continuos de accesibilidad, más allá de medidas binarias de cobertura, para evaluar adecuadamente el impacto de estrategias de localización en contextos urbanos densos.
+
+En este sentido, los resultados sugieren que, en ciudades consolidadas, las políticas y decisiones de localización de servicios deben orientarse más hacia la optimización de la accesibilidad y la eficiencia espacial que hacia la simple ampliación de la cobertura. Desde una perspectiva de geomarketing, esto implica reconocer que las oportunidades de mejora se encuentran en ajustes finos de localización, capaces de generar beneficios marginales pero territorialmente relevantes para la población.
+
+# 5. Conclusiones
+
+El presente trabajo permitió analizar la relación entre demanda potencial y la oferta a nivel espacial, considerando servicios de comida fuera del hogar. Los resultados evidencian una distribución territorial heterogénea tanto en demanda como en oferta, coherente con las dinámicas de un sistema urbano como el Gran Santiago.
+
+La estimación de la demanda potencial mostró concentraciones relevantes en sectores específicos del teritorio mientras que la oferta presentó una distribución desigual, con zonas de alta concentración y otras con menor disponibilidad relativa de servicios. El análisis conjunto identificó brechas territoriales, particularmente en zonas con alta demanda y baja oferta, las cuales se consideraron prioritarias para la evaluación de escenarios de localización.
+
+La aplicación del modelo permitió proponer una localización óptima para la oferta. Si bien la intevenció no generó una expansión significativa, si produjo mejoras localizadas en la accesibilidad, expresadas como reducciones en la distancia al establecimiento más cercano.
+
+En conjunto, los resultados muestran que en contextos urbanos densos, las estrategias de localización óptima tienden a generar mejoras marginales en accesibilidad más que aumentos de cobertura, destacando la utilidad e enfoques basados en optimización espacial para apoyar decisiones de planificación y geomarketing.
+
+# Bibliografía
+
+Instituto Nacional de Estadísticas (INE). (2017). *Censo de Población y Vivienda 2017: Base de datos censales*. <https://www.ine.gob.cl>
+
+Ministerio de Desarrollo Social y Familia. (2022). *Encuesta de Caracterización Socioeconómica Nacional (CASEN 2022): Base de datos*. <https://observatorio.ministeriodesarrollosocial.gob.cl>
+
+Ministerio de Desarrollo Social y Familia. (2018). *Encuesta de Presupuestos Familiares (EPF)*. <https://www.ine.gob.cl>
+
+OpenStreetMap contributors. (2024). *OpenStreetMap: Datos geográficos abiertos*. <https://www.openstreetmap.org>
+
+Batty, M. (2013). *The New Science of Cities*. MIT Press.
+
+Huff, D. L. (1964). Defining and estimating a trading area. *Journal of Marketing, 28*(3), 34–38. <https://doi.org/10.1177/002224296402800307>
+
+Geurs, K. T., & van Wee, B. (2004). Accessibility evaluation of land-use and transport strategies: Review and research directions. *Journal of Transport Geography, 12*(2), 127–140. <https://doi.org/10.1016/j.jtrangeo.2003.10.005>
+
+McDonald, J. F. (2007). *Urban Economics and Real Estate: Theory and Policy*. Blackwell Publishing.

@@ -497,7 +497,7 @@ Además se generó una tabla resumen de cada uno para poder observar claramente 
 
 <!-- -->
 
--    **Cluster 2 – Zonas de alto nivel socioeconómico**\
+-   **Cluster 2 – Zonas de alto nivel socioeconómico**\
     Caracterizado por los **mayores niveles de ingreso, formalidad laboral y escolaridad**, junto con una presencia migrante relativamente baja o concentrada en sectores de mayor integración formal. Representa las zonas de mayor bienestar del Gran Santiago.
 
 <!-- -->
@@ -728,7 +728,7 @@ Para comprender como se agregan estas tipologías de zonas censales en cada comu
 
 Esto nos muestra que las tendencias de cada comuna se mantienen, y que se da bastante homogeniedad a nivel comunal en algunas zonas.
 
-## 4.3  Variabilidad interna de los clusters: Índice de Shannon
+## 4.3 Variabilidad interna de los clusters: Índice de Shannon
 
 Otra manera más compleja que solo analizar la dominancia de un cluster por comuna, es el analizar la heterogeniedad de los clusters de una comuna, esto a través del **Índice de Shannon observado en el Mapa 3.** Para este índice los valores cercanos a 0 representan comunas **homogéneas** y los valores más altos corresponden a zonas con mayor **heterogéneidad. De esto podemos observar:**
 
@@ -768,8 +768,8 @@ Finalmente se puede concluir que los resultados entregan una visión consistente
 
 <!-- -->
 
--    Rodríguez, A., & Sugranyes, A. (2021). **Los con techo: Un desafío para la política habitacional**. RIL Editores.
+-   Rodríguez, A., & Sugranyes, A. (2021). **Los con techo: Un desafío para la política habitacional**. RIL Editores.
 
 <!-- -->
 
--    Stefoni, C., Leiva, S., & Bonhomme, M. (2020). **Migración y desigualdad urbana en Chile**. *Revista INVI, 35*(99), 75–104.
+-   Stefoni, C., Leiva, S., & Bonhomme, M. (2020). **Migración y desigualdad urbana en Chile**. *Revista INVI, 35*(99), 75–104.
